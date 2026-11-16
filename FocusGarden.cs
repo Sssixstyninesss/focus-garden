@@ -36,9 +36,13 @@ public class Garden : Form {
  System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer();
  bool loading = true, sound = true; Button soundButton;
  Color bg, panel, ink, muted, border, accent;
+ FocusIsland island;
+ NotifyIcon tray;
+ bool exiting, previewMode;
  [STAThread] public static void Main(string[] args) {
   if (args.Contains("--self-test")) { SelfTest(); return; }
   Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+  if (args.Contains("--render-preview")) { RenderPreview(args.Last()); return; }
   using (var mutex = new System.Threading.Mutex(true,"Local\\FocusGardenDesktop",out single)) { if (!single) { MessageBox.Show("Focus Garden уже запущен."); return; } Application.Run(new Garden()); }
  }
  static bool single;
@@ -46,6 +50,7 @@ public class Garden : Form {
   var d = new SaveData(); d.Plants.Add(new Plant { Task = "Тест", Minutes = 25, Date = DateTime.UtcNow, Kind = 2 });
   using(var ms = new MemoryStream()) { Serializer().WriteObject(ms,d); ms.Position=0; var copy=(SaveData)Serializer().ReadObject(ms); Validate(copy); if(copy.Plants[0].Task!="Тест" || !copy.Dark) throw new Exception("Serialization failed"); }
   if (Format(65)!="01:05" || Seconds(DateTime.UtcNow.AddSeconds(-2))!=0) throw new Exception("Timer failed");
+  bool rejected=false; try { Validate(new SaveData { Minutes=-1 }); } catch { rejected=true; } if(!rejected) throw new Exception("Invalid duration accepted");
   Console.WriteLine("PASS: serialization, validation, time formatting, elapsed deadline");
  }
  static DataContractJsonSerializer Serializer() { return new DataContractJsonSerializer(typeof(SaveData)); }
@@ -55,13 +60,16 @@ public class Garden : Form {
  }
  static string Format(double seconds) { int s=(int)Math.Ceiling(seconds); return (s/60).ToString("00")+":"+(s%60).ToString("00"); }
  static double Seconds(DateTime deadline) { return Math.Max(0,(deadline-DateTime.UtcNow).TotalSeconds); }
- public Garden() {
+ public Garden() : this(false) { }
+ public Garden(bool preview) {
+  previewMode=preview;
   Text="Focus Garden"; ClientSize=new Size(1060,760); FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen; Font=new Font("Segoe UI",10); DoubleBuffered=true;
-  try { if(File.Exists(savePath)) using(var f=File.OpenRead(savePath)) { data=(SaveData)Serializer().ReadObject(f); Validate(data); } } catch { data=new SaveData(); MessageBox.Show("Не удалось прочитать сохранение. Исходный файл сохранён; создана резервная копия при следующем сохранении.","Focus Garden"); }
+  try { if(!previewMode && File.Exists(savePath)) using(var f=File.OpenRead(savePath)) { data=(SaveData)Serializer().ReadObject(f); Validate(data); } } catch { data=new SaveData(); MessageBox.Show("Не удалось прочитать сохранение. Исходный файл сохранён; создана резервная копия при следующем сохранении.","Focus Garden"); }
   title=LabelAt(this,"✳  focus garden",30,22,400,46,25,FontStyle.Bold);
   tagline=LabelAt(this,"МЕНЬШЕ ШУМА. БОЛЬШЕ РОСТА.",34,78,600,28,10,FontStyle.Regular);
   theme=ButtonAt(this,"Светлая тема",820,28,200,38,delegate { data.Dark=!data.Dark; ApplyTheme(); Save(); });
   soundButton=ButtonAt(this,"Звук: вкл.",820,76,200,32,delegate { sound=!sound; soundButton.Text=sound?"Звук: вкл.":"Звук: выкл."; });
+  ButtonAt(this,"◉  Focus Island",610,28,190,38,ShowIsland);
   timerPanel.SetBounds(30,130,430,430); Controls.Add(timerPanel);
   gardenPanel.SetBounds(480,130,550,430); Controls.Add(gardenPanel);
   LabelAt(timerPanel,"01 / ВРЕМЯ ДЛЯ ВАЖНОГО",24,20,370,24,10,FontStyle.Regular);
@@ -83,8 +91,48 @@ public class Garden : Form {
   export=ButtonAt(this,"↓ Экспорт сада",760,640,270,38,Export);
   import=ButtonAt(this,"↑ Импорт сада",760,688,270,38,Import);
   Resize+=delegate { int extra=ClientSize.Width-1060; theme.Left=820+extra; soundButton.Left=820+extra; };
-  FormClosing+=delegate { if(data.Running) data.Remaining=Seconds(data.Deadline); Save(); };
+  FormClosing+=delegate { exiting=true; if(data.Running) data.Remaining=Seconds(data.Deadline); Save(); tick.Stop(); if(island!=null) { island.Close(); island.Dispose(); } if(tray!=null) { tray.Visible=false; tray.Dispose(); } };
   loading=false; ApplyTheme(); Render(); tick.Interval=250; tick.Tick+=delegate { UpdateTimer(); }; tick.Start(); UpdateTimer();
+  if(!previewMode) {
+   var menu=new ContextMenuStrip(); menu.Items.Add("Показать капсулу",null,delegate { ShowIsland(); }); menu.Items.Add("Открыть сад",null,delegate { ShowGarden(); }); menu.Items.Add("Выход",null,delegate { Close(); });
+   tray=new NotifyIcon { Icon=SystemIcons.Application,Text="Focus Garden · нажми, чтобы открыть",ContextMenuStrip=menu,Visible=true };
+   tray.DoubleClick+=delegate { ShowGarden(); };
+   Shown+=delegate { ShowIsland(); };
+  }
+ }
+ public SaveData State { get { return data; } }
+ public string TimeText { get { return Format(data.Running?Seconds(data.Deadline):data.Remaining); } }
+ public double Progress { get { return Math.Max(0,Math.Min(1,1-(data.Running?Seconds(data.Deadline):data.Remaining)/(data.Minutes*60.0))); } }
+ public void ToggleFromIsland() { UpdateTimer(); Toggle(); }
+ public void IslandDuration(int minutes) { if(!data.Running) SetDuration(minutes); }
+ public void IslandBreak() { if(data.Running) return; data.Rest=!data.Rest; SetDuration(data.Rest?5:25); }
+ public void ShowGarden() { if(island!=null) island.Hide(); Show(); WindowState=FormWindowState.Normal; Activate(); }
+ public void ShowIsland() { if(exiting) return; if(island==null || island.IsDisposed) island=new FocusIsland(this); island.Show(); island.Activate(); Hide(); }
+ public void ExitFromIsland() { Close(); }
+ static void RenderPreview(string folder) {
+  Directory.CreateDirectory(folder);
+  using(var garden=new Garden(true)) {
+   garden.data.Task="Сделать что-нибудь, чем хочется поделиться"; garden.task.Text=garden.data.Task;
+   garden.data.Plants.Add(new Plant { Task="Первая маленькая победа",Minutes=25,Date=DateTime.UtcNow,Kind=2 });
+   garden.data.Remaining=18*60+42; garden.Render();
+   using(var capsule=new FocusIsland(garden)) {
+    capsule.CreateControl(); capsule.RenderTo(Path.Combine(folder,"island-compact.png"),false);
+    capsule.RenderTo(Path.Combine(folder,"island-expanded.png"),true);
+    garden.ToggleFromIsland(); if(!garden.data.Running) throw new Exception("Island start failed");
+    garden.ToggleFromIsland(); if(garden.data.Running || garden.data.Remaining>1123) throw new Exception("Island pause failed");
+    garden.IslandBreak(); if(!garden.data.Rest || garden.data.Minutes!=5) throw new Exception("Island break failed");
+    garden.IslandBreak(); garden.data.Deadline=DateTime.UtcNow.AddSeconds(-2); garden.data.Running=true; garden.UpdateTimer();
+    if(garden.data.Running || garden.data.Plants.Count!=2) throw new Exception("Completed session did not grow a plant");
+    garden.UpdateTimer(); if(garden.data.Plants.Count!=2) throw new Exception("Duplicate plant after completion");
+    capsule.Celebrate(); capsule.RenderTo(Path.Combine(folder,"island-celebration.png"),true);
+   }
+   garden.data.Remaining=25*60; garden.Render();
+   garden.StartPosition=FormStartPosition.Manual; garden.Location=new Point(-30000,-30000); garden.ShowInTaskbar=false; garden.Show();
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"dark-theme.png")); }
+   garden.data.Dark=false; garden.ApplyTheme();
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"light-theme.png")); }
+   garden.Hide();
+  }
  }
  Label LabelAt(Control parent,string text,int x,int y,int w,int h,int size,FontStyle style) { var l=new Label { Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",size,style),BackColor=Color.Transparent }; parent.Controls.Add(l); return l; }
  Button ButtonAt(Control parent,string text,int x,int y,int w,int h,Action action) { var b=new Button { Text=text,Location=new Point(x,y),Size=new Size(w,h),FlatStyle=FlatStyle.Flat,Cursor=Cursors.Hand,TabStop=true }; b.FlatAppearance.BorderSize=0; b.Click+=delegate { action(); }; parent.Controls.Add(b); return b; }
@@ -99,7 +147,7 @@ public class Garden : Form {
  void UpdateTimer() {
   if(data.Running) {
    data.Remaining=Seconds(data.Deadline);
-   if(data.Remaining<=0) { data.Running=false; if(!data.Rest) { data.Plants.Add(new Plant { Task=task.Text.Trim(),Minutes=data.Minutes,Date=DateTime.UtcNow,Kind=new Random().Next(4) }); hint.Text="Новый росток! Теперь можно немного отдохнуть."; } else hint.Text="Передышка закончилась. Готов к следующему ростку?"; data.Remaining=data.Minutes*60; Save(); if(sound) System.Media.SystemSounds.Asterisk.Play(); Render(); }
+   if(data.Remaining<=0) { data.Running=false; if(!data.Rest) { data.Plants.Add(new Plant { Task=task.Text.Trim(),Minutes=data.Minutes,Date=DateTime.UtcNow,Kind=new Random().Next(4) }); hint.Text="Новый росток! Теперь можно немного отдохнуть."; } else hint.Text="Передышка закончилась. Готов к следующему ростку?"; data.Remaining=data.Minutes*60; Save(); if(sound) System.Media.SystemSounds.Asterisk.Play(); if(island!=null) island.Celebrate(); Render(); }
   }
   clock.Text=Format(data.Remaining); Text=data.Running?clock.Text+" · Focus Garden":"Focus Garden";
  }
@@ -107,10 +155,10 @@ public class Garden : Form {
   clock.Text=Format(data.Remaining); start.Text=data.Running?"Пауза  Ⅱ":data.Remaining<data.Minutes*60?"Продолжить  ↗":data.Rest?"Начать передышку":"Начать фокус  ↗";
   mode.Text=data.Rest?"Передышка · переключить на фокус":"Фокус · переключить на отдых";
   foreach(var b in durations) { b.Enabled=!data.Running; b.ForeColor=ink; b.BackColor=border; }
-  stats.Text=data.Plants.Count+" растений     /     "+data.Plants.Sum(p=>p.Minutes)+" минут     /     "+data.Plants.Count(p=>p.Date.ToLocalTime().Date==DateTime.Today)+" сегодня";
+  stats.Text="Растения: "+data.Plants.Count+"     /     Фокус: "+data.Plants.Sum(p=>p.Minutes)+" мин     /     Сегодня: "+data.Plants.Count(p=>p.Date.ToLocalTime().Date==DateTime.Today);
   history.Items.Clear(); foreach(var p in data.Plants.AsEnumerable().Reverse().Take(30)) history.Items.Add(p.Date.ToLocalTime().ToString("dd.MM HH:mm")+"   ✳   "+(p.Task.Length==0?"Время для себя":p.Task)+"   +"+p.Minutes+" мин"); if(data.Plants.Count==0) history.Items.Add("Заверши первую сессию — и здесь появится первая история."); canvas.Invalidate();
  }
- void Save() { try { Directory.CreateDirectory(Path.GetDirectoryName(savePath)); string tmp=savePath+".tmp"; using(var f=File.Create(tmp)) Serializer().WriteObject(f,data); if(File.Exists(savePath)) File.Replace(tmp,savePath,savePath+".bak"); else File.Move(tmp,savePath); } catch(Exception e) { hint.Text="Не удалось сохранить сад: "+e.Message; } }
+ void Save() { if(previewMode) return; try { Directory.CreateDirectory(Path.GetDirectoryName(savePath)); string tmp=savePath+".tmp"; using(var f=File.Create(tmp)) Serializer().WriteObject(f,data); if(File.Exists(savePath)) File.Replace(tmp,savePath,savePath+".bak"); else File.Move(tmp,savePath); } catch(Exception e) { hint.Text="Не удалось сохранить сад: "+e.Message; } }
  void Export() { using(var dialog=new SaveFileDialog { Filter="Focus Garden (*.json)|*.json",FileName="focus-garden-"+DateTime.Today.ToString("yyyy-MM-dd")+".json" }) if(dialog.ShowDialog()==DialogResult.OK) try { using(var f=File.Create(dialog.FileName)) Serializer().WriteObject(f,data); hint.Text="Резервная копия сохранена."; } catch(Exception e) { MessageBox.Show(e.Message,"Ошибка экспорта"); } }
  void Import() { using(var dialog=new OpenFileDialog { Filter="Focus Garden (*.json)|*.json" }) if(dialog.ShowDialog()==DialogResult.OK) try { if(new FileInfo(dialog.FileName).Length>5000000) throw new Exception("Файл больше 5 МБ."); SaveData incoming; using(var f=File.OpenRead(dialog.FileName)) incoming=(SaveData)Serializer().ReadObject(f); Validate(incoming); var merged=data.Plants.Concat(incoming.Plants).GroupBy(p=>p.Date.ToString("o")+"|"+p.Task+"|"+p.Minutes).Select(g=>g.First()).OrderBy(p=>p.Date).ToList(); if(merged.Count>10000) throw new Exception("Максимум 10000 растений."); data.Plants=merged; Save(); Render(); hint.Text="Сад импортирован, повторяющиеся растения объединены."; } catch(Exception e) { MessageBox.Show(e.Message,"Не удалось импортировать сад"); } }
  void DrawGarden(object sender,PaintEventArgs e) {
