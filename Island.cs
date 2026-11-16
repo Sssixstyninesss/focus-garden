@@ -140,7 +140,12 @@ public sealed class FocusIsland : Form {
    using(var field=new SolidBrush(Color.FromArgb(30,38,43))) using(var shape=Shapes.Round(new Rectangle(26,139,396,30),9)) g.FillPath(field,shape);
    using(var track=new SolidBrush(Color.FromArgb(43,53,58))) g.FillRectangle(track,27,226,394,3);
    using(var fill=new SolidBrush(mint)) g.FillRectangle(fill,27,226,(float)(394*garden.Progress),3);
-   if(party && !s.ReducedMotion) for(int i=0;i<10;i++) { double angle=i*.68+now*.25; float x=357+(float)Math.Cos(angle)*56,y=101+(float)Math.Sin(angle)*31; using(var b=new SolidBrush(i%2==0?mint:Color.FromArgb(182,174,218))) g.FillEllipse(b,x,y,2,2); }
+   DrawText(g,"TODAY  "+garden.TodayMinutes+" / "+s.DailyGoal+"m",7,FontStyle.Regular,new Rectangle(27,210,210,14),muted);
+   DrawText(g,s.SelectedKind<0?"MIXED SEEDS":Garden.PlantName(s.SelectedKind).ToUpperInvariant(),7,FontStyle.Regular,new Rectangle(305,210,117,14),mint);
+   if(party && !s.ReducedMotion) {
+    double age=8-(celebrationUntil-now);
+    if(age<3) for(int i=0;i<18;i++) { double angle=i*2.39996,travel=10+age*(18+i%5*4); float x=356+(float)(Math.Cos(angle)*travel),y=101+(float)(Math.Sin(angle)*travel-age*20+age*age*8); Color color=i%3==0?Color.FromArgb(182,174,218):mint; using(var b=new SolidBrush(Color.FromArgb((int)(220*(1-age/3)),color))) g.FillEllipse(b,x,y,2+i%2,2+i%2); }
+   }
   }
  }
  static void DrawText(Graphics g,string value,int size,FontStyle style,Rectangle bounds,Color color) { using(var font=new Font("Segoe UI",size,style)) TextRenderer.DrawText(g,value,font,bounds,color,TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter); }
@@ -158,6 +163,18 @@ public sealed class FocusIsland : Form {
   Suspend(); testTime=9; Frame(); if(Visible) throw new Exception("Suspended island reappeared");
   Reveal(); testTime=10; Frame(); if(!Visible || Width!=328) throw new Exception("Tray restore failed");
   Suspend(); testTime=-1; testPointer=null; suspended=false; presence.Enabled=true;
+ }
+ public void RenderMotionFrames(string folder) {
+  System.IO.Directory.CreateDirectory(folder); animation.Stop(); anchor=new Point(-30000,-30000); UpdateHotspot(); testPointer=new Point(anchor.X,anchor.Y+30); testTime=0; presence.Pinned=true; presence.Wake(0); Show(); BeginTransition(328,64,1);
+  for(int i=0;i<120;i++) {
+   testTime=i/30.0;
+   if(i==20) SetExpanded(true);
+   if(i==58) { celebrationUntil=Now+8; reward=true; }
+   if(i==90) { celebrationUntil=0; SetExpanded(false); }
+   Frame();
+   using(var form=new Bitmap(Width,Height)) using(var frame=new Bitmap(500,360)) using(var g=Graphics.FromImage(frame)) { g.Clear(Color.FromArgb(16,20,24)); DrawToBitmap(form,new Rectangle(Point.Empty,Size)); g.DrawImageUnscaled(form,(500-Width)/2,16); frame.Save(System.IO.Path.Combine(folder,"frame-"+i.ToString("000")+".png")); }
+  }
+  Suspend();
  }
  protected override void Dispose(bool disposing) { if(disposing) { animation.Dispose(); tips.Dispose(); } base.Dispose(disposing); }
 }
