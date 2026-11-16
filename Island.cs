@@ -155,7 +155,7 @@ public static class Shapes {
 }
 
 public class PillButton : Button {
- public bool Primary,Selected,UseControlColors;
+ public bool Primary,Selected,UseControlColors,Destructive;
  float hover; bool over;
  readonly Timer motion=new Timer();
  public PillButton() {
@@ -166,6 +166,7 @@ public class PillButton : Button {
  protected override void OnPaint(PaintEventArgs e) {
   var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias; Color basis=UseControlColors?BackColor:Primary?Color.FromArgb(167,227,188):Selected?Color.FromArgb(49,75,65):Color.FromArgb(34,42,47);
   Color fill=Color.FromArgb(Math.Min(255,basis.R+(int)(hover*12)),Math.Min(255,basis.G+(int)(hover*12)),Math.Min(255,basis.B+(int)(hover*12)));
+  if(Destructive && hover>0) fill=Color.FromArgb((int)(basis.R+(185-basis.R)*hover),(int)(basis.G+(62-basis.G)*hover),(int)(basis.B+(69-basis.B)*hover));
   using(var path=Shapes.Round(new Rectangle(0,0,Width-1,Height-1),12)) using(var b=new SolidBrush(fill)) g.FillPath(b,path);
   Color ink=!Enabled?Color.FromArgb(100,114,119):UseControlColors?ForeColor:Primary?Color.FromArgb(18,41,29):Color.FromArgb(224,233,236);
   TextRenderer.DrawText(g,Text,Font,ClientRectangle,ink,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);

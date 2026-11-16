@@ -39,6 +39,8 @@ public class Garden : Form {
  FocusIsland island;
  NotifyIcon tray;
  bool exiting, previewMode;
+ Panel windowHeader;
+ Button minimizeButton, closeButton;
  [STAThread] public static void Main(string[] args) {
   if (args.Contains("--self-test")) { SelfTest(); return; }
   Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
@@ -70,7 +72,7 @@ public class Garden : Form {
  public Garden() : this(false) { }
  public Garden(bool preview) {
   previewMode=preview;
-  Text="Focus Garden"; Icon=LoadIcon(); ClientSize=new Size(1060,760); FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen; Font=new Font("Segoe UI",10); DoubleBuffered=true;
+  Text="Focus Garden"; Icon=LoadIcon(); FormBorderStyle=FormBorderStyle.None; ClientSize=new Size(1060,792); MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen; Font=new Font("Segoe UI",10); DoubleBuffered=true;
   try { if(!previewMode && File.Exists(savePath)) using(var f=File.OpenRead(savePath)) { data=(SaveData)Serializer().ReadObject(f); Validate(data); } } catch { data=new SaveData(); MessageBox.Show("The saved garden could not be read. The original file will be backed up on the next save.","Focus Garden"); }
   title=LabelAt(this,"Focus Garden",82,22,400,46,24,FontStyle.Bold);
   var mark=new PictureBox { Image=LoadMark(),SizeMode=PictureBoxSizeMode.Zoom,Location=new Point(34,28),Size=new Size(36,36) }; Controls.Add(mark);
@@ -99,6 +101,20 @@ public class Garden : Form {
   history.SetBounds(32,648,698,82); history.BorderStyle=BorderStyle.None; history.HorizontalScrollbar=true; Controls.Add(history);
   export=ButtonAt(this,"Export garden",760,640,270,38,Export);
   import=ButtonAt(this,"Import garden",760,688,270,38,Import);
+  foreach(Control control in Controls) control.Top+=32;
+  windowHeader=new Panel { Location=Point.Empty,Size=new Size(1060,32) }; Controls.Add(windowHeader);
+  var windowName=LabelAt(windowHeader,"Focus Garden",26,4,300,24,9,FontStyle.Regular);
+  bool moving=false; Point mouseOrigin=Point.Empty,windowOrigin=Point.Empty;
+  MouseEventHandler down=delegate(object sender,MouseEventArgs e) { if(e.Button!=MouseButtons.Left) return; moving=true; mouseOrigin=Cursor.Position; windowOrigin=Location; ((Control)sender).Capture=true; };
+  MouseEventHandler move=delegate { if(moving) Location=new Point(windowOrigin.X+Cursor.Position.X-mouseOrigin.X,windowOrigin.Y+Cursor.Position.Y-mouseOrigin.Y); };
+  MouseEventHandler up=delegate(object sender,MouseEventArgs e) { moving=false; ((Control)sender).Capture=false; };
+  windowHeader.MouseDown+=down; windowHeader.MouseMove+=move; windowHeader.MouseUp+=up;
+  windowName.MouseDown+=down; windowName.MouseMove+=move; windowName.MouseUp+=up;
+  minimizeButton=ButtonAt(windowHeader,"−",958,4,40,24,delegate { WindowState=FormWindowState.Minimized; }); minimizeButton.AccessibleName="Minimize window";
+  closeButton=ButtonAt(windowHeader,"×",1006,4,40,24,delegate { Close(); }); closeButton.AccessibleName="Close application";
+  ((PillButton)closeButton).Destructive=true;
+  using(var shape=Shapes.Round(ClientRectangle,22)) Region=new Region(shape);
+  Paint+=delegate(object sender,PaintEventArgs e) { e.Graphics.SmoothingMode=SmoothingMode.AntiAlias; using(var outline=new Pen(border)) using(var shape=Shapes.Round(new Rectangle(0,0,Width-1,Height-1),22)) e.Graphics.DrawPath(outline,shape); };
   Resize+=delegate { int extra=ClientSize.Width-1060; theme.Left=820+extra; soundButton.Left=820+extra; };
   FormClosing+=delegate { exiting=true; if(data.Running) data.Remaining=Seconds(data.Deadline); Save(); tick.Stop(); if(island!=null) { island.Close(); island.Dispose(); } if(tray!=null) { tray.Visible=false; tray.Dispose(); } };
   loading=false; ApplyTheme(); Render(); tick.Interval=250; tick.Tick+=delegate { UpdateTimer(); }; tick.Start(); UpdateTimer();
@@ -128,21 +144,21 @@ public class Garden : Form {
    garden.data.Remaining=18*60+42; garden.Render();
    using(var capsule=new FocusIsland(garden)) {
     capsule.CheckLifecycle();
-    capsule.CreateControl(); capsule.RenderTo(Path.Combine(folder,"island-compact.png"),false);
-    capsule.RenderTo(Path.Combine(folder,"island-expanded.png"),true);
+    capsule.CreateControl(); capsule.RenderTo(Path.Combine(folder,"island-compact-en.png"),false);
+    capsule.RenderTo(Path.Combine(folder,"island-expanded-en.png"),true);
     garden.ToggleFromIsland(); if(!garden.data.Running) throw new Exception("Island start failed");
     garden.ToggleFromIsland(); if(garden.data.Running || garden.data.Remaining>1123) throw new Exception("Island pause failed");
     garden.IslandBreak(); if(!garden.data.Rest || garden.data.Minutes!=5) throw new Exception("Island break failed");
     garden.IslandBreak(); garden.data.Deadline=DateTime.UtcNow.AddSeconds(-2); garden.data.Running=true; garden.UpdateTimer();
     if(garden.data.Running || garden.data.Plants.Count!=2) throw new Exception("Completed session did not grow a plant");
     garden.UpdateTimer(); if(garden.data.Plants.Count!=2) throw new Exception("Duplicate plant after completion");
-    capsule.Celebrate(); capsule.RenderTo(Path.Combine(folder,"island-celebration.png"),true);
+    capsule.Celebrate(); capsule.RenderTo(Path.Combine(folder,"island-celebration-en.png"),true);
    }
    garden.data.Remaining=25*60; garden.Render();
    garden.StartPosition=FormStartPosition.Manual; garden.Location=new Point(-30000,-30000); garden.ShowInTaskbar=false; garden.Show();
-   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"dark-theme.png")); }
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"dark-theme-en.png")); }
    garden.data.Dark=false; garden.ApplyTheme();
-   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"light-theme.png")); }
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"light-theme-en.png")); }
    garden.Hide();
   }
  }
@@ -151,6 +167,7 @@ public class Garden : Form {
  void ApplyTheme() {
   bg=ColorTranslator.FromHtml(data.Dark?"#101418":"#EFF2F3"); panel=ColorTranslator.FromHtml(data.Dark?"#192126":"#FFFFFF"); ink=ColorTranslator.FromHtml(data.Dark?"#EBF0F1":"#1C2A2E"); muted=ColorTranslator.FromHtml(data.Dark?"#95A8AF":"#65777D"); border=ColorTranslator.FromHtml(data.Dark?"#29363C":"#E3EBEB"); accent=ColorTranslator.FromHtml(data.Dark?"#A7E3BC":"#275C48");
   BackColor=bg; PaintControls(this); timerPanel.BackColor=panel; gardenPanel.BackColor=panel; canvas.BackColor=panel;
+  windowHeader.BackColor=bg; windowHeader.Controls[0].ForeColor=muted; minimizeButton.BackColor=bg; closeButton.BackColor=bg;
   theme.Text=data.Dark?"Light theme":"Dark theme"; start.BackColor=accent; start.ForeColor=data.Dark?bg:Color.White; hint.ForeColor=muted; tagline.ForeColor=muted; stats.ForeColor=muted; canvas.Invalidate();
  }
  void PaintControls(Control root) { foreach(Control c in root.Controls) { c.ForeColor=ink; if(c is Button) c.BackColor=border; else if(c is TextBox || c is ListBox) c.BackColor=panel; PaintControls(c); } }

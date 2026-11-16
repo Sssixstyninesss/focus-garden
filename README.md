@@ -3,7 +3,7 @@
 <p align="center">A Windows focus timer with an auto-hiding desktop island.</p>
 <p align="center"><a href="https://github.com/Sssixstyninesss/focus-garden/releases/latest">Download for Windows</a> · <a href="#controls">Controls</a> · <a href="#build">Build from source</a></p>
 
-<p align="center"><img src="docs/island-expanded.png" alt="Expanded Focus Island with session controls"></p>
+<p align="center"><img src="docs/island-expanded-en.png" alt="Expanded Focus Island with session controls"></p>
 
 The island shows your timer above other windows. Move the pointer away and it fades out. Hover over its previous position to bring it back. Click to expand the controls or drag the background to move it.
 
@@ -28,7 +28,7 @@ To update, quit through the tray menu and replace the executable. Keep the adjac
 - Four plant designs, session history, JSON import and export.
 - Portable storage. No network requests, accounts, telemetry, or subscriptions.
 
-<p align="center"><img src="docs/island-compact.png" alt="Compact timer"></p>
+<p align="center"><img src="docs/island-compact-en.png" alt="Compact timer"></p>
 
 ## Controls
 
@@ -48,11 +48,11 @@ The hidden island is a hidden window, not a transparent overlay: it does not int
 
 ## Garden
 
-![Dark theme](docs/dark-theme.png)
+![Dark theme](docs/dark-theme-en.png)
 
 <details><summary>Light theme</summary>
 
-![Light theme](docs/light-theme.png)
+![Light theme](docs/light-theme-en.png)
 
 </details>
 
