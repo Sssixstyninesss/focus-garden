@@ -1,76 +1,99 @@
-# ✳ Focus Garden Desktop
+<p align="center"><img src="assets/app.png" width="80" alt="Focus Garden icon"></p>
+<h1 align="center">Focus Garden</h1>
+<p align="center">A Windows focus timer with an auto-hiding desktop island.</p>
+<p align="center"><a href="https://github.com/Sssixstyninesss/focus-garden/releases/latest">Download for Windows</a> · <a href="#controls">Controls</a> · <a href="#build">Build from source</a></p>
 
-**Маленький остров спокойствия поверх рабочего стола.**
+<p align="center"><img src="docs/island-expanded.png" alt="Expanded Focus Island with session controls"></p>
 
-Focus Garden живёт в плавающей капсуле в стиле Dynamic Island: таймер всегда рядом, а остальное раскрывается по нажатию. Посвяти время важному — за каждую сессию в твоём саду вырастет пиксельное растение. Нативное приложение для Windows, без браузера, сервера, аккаунта и подписки.
+The island shows your timer above other windows. Move the pointer away and it fades out. Hover over its previous position to bring it back. Click to expand the controls or drag the background to move it.
 
-**[Скачать для Windows](https://github.com/Sssixstyninesss/focus-garden/releases/latest)** · **[Сообщить об ошибке](https://github.com/Sssixstyninesss/focus-garden/issues)**
+Completed focus sessions add plants to a local garden. Open the full window to name a task, view your sessions, change the theme, or export a backup.
 
-### Один остров. Два состояния.
+## Install
 
-![Компактная капсула с таймером](docs/island-compact.png)
+Download **FocusGarden.exe** from [Releases](https://github.com/Sssixstyninesss/focus-garden/releases/latest) and place it in a writable folder, including a folder on D:. No installer or administrator access is required.
 
-Нажми, чтобы раскрыть управление. Перетащи, чтобы найти своё место на экране.
+Requires Windows 10 or 11 with .NET Framework 4.8. The executable is not digitally signed. No browser, Node.js, or additional packages are needed to run it.
 
-![Раскрытая капсула Focus Island](docs/island-expanded.png)
+To update, quit through the tray menu and replace the executable. Keep the adjacent `data` folder to preserve your garden.
 
-*Предпросмотры отрисованы самим приложением с демонстрационной задачей.*
+## Features
 
-### А за островом — целый сад
+- Auto-hide after 1.8 seconds away from the island; hover to reveal.
+- Size and opacity transitions with time-based easing; animated button hover states.
+- Pin mode to keep the island visible.
+- 15, 25, and 50 minute sessions, a 1 minute demo, and 5 minute breaks.
+- Pause, resume, and a completion notification inside the island.
+- Dark and light themes for the garden window.
+- Four plant designs, session history, JSON import and export.
+- Portable storage. No network requests, accounts, telemetry, or subscriptions.
 
-![Тёмная тема Focus Garden](docs/dark-theme.png)
+<p align="center"><img src="docs/island-compact.png" alt="Compact timer"></p>
 
-*Окна ниже также отрисованы приложением с демонстрационной задачей.*
+## Controls
 
-<details>
-<summary>Посмотреть светлую тему</summary>
+| Action | Control |
+| --- | --- |
+| Reveal the hidden island | Hover over its previous compact position for about 150 ms |
+| Expand or collapse | Click the island background |
+| Move | Drag the island background |
+| Keep visible | **Pin** in the expanded island |
+| Collapse | **−** or `Esc` |
+| Open the garden | **Open garden**, `F2`, or double-click the tray icon |
+| Return to the island | **Focus Island** in the garden window |
+| Start or pause | Session button; `Space` when the island background has keyboard focus |
+| Exit | Right-click the tray icon → **Quit** |
 
-![Светлая тема Focus Garden](docs/light-theme.png)
+The hidden island is a hidden window, not a transparent overlay: it does not intercept clicks. The app checks the pointer position without capturing the screen or installing a global mouse hook. Opening the garden suspends hover detection until you return to the island. A completed session reveals the island for eight seconds, unless the full garden is open.
+
+## Garden
+
+![Dark theme](docs/dark-theme.png)
+
+<details><summary>Light theme</summary>
+
+![Light theme](docs/light-theme.png)
 
 </details>
 
-## Запуск
+Previews are rendered by the application with sample data. The garden displays the most recent 18 plants and 30 sessions; statistics include the full collection. Breaks do not add plants.
 
-Скачай и запусти **FocusGarden.exe**. Установка не нужна: файл можно хранить на любом диске. Требуется Windows 10/11 с .NET Framework 4.8 (обычно уже входит в Windows). Приложение не подписано цифровым сертификатом.
+The timer uses a deadline. If you close the app during a session, the elapsed time is accounted for on the next launch. Notifications only run while the app is open. The timer does not monitor whether you are working.
 
-1. Приложение откроется в виде капсулы сверху экрана. Нажми на неё и выбери длительность.
-2. Нажми «Начать фокус» и займись задачей.
-3. Дождись ростка. Сделай передышку. Повтори в своём темпе.
+## Data
 
-Капсула остаётся поверх обычных окон. Прогресс окружает маленький росток; при завершении капсула раскрывается с сообщением и частицами. Кнопка **«Открыть сад»** возвращает большое окно с задачей, историей и настройками. Кнопка **Focus Island** в большом окне возвращает капсулу.
+Saved in `data/garden.json` beside the executable. `data/garden.json.bak` holds the previous save. Use **Export garden** for a separate backup; **Import garden** merges sessions and skips duplicates.
 
-**Управление:** клик по фону — раскрыть/свернуть; перетаскивание фона — переместить; `Esc` — свернуть; `F2` — открыть сад. Пробел переключает таймер, когда фокус на фоне капсулы; на кнопках работает обычная клавиатурная активация. `×` в раскрытой капсуле завершает приложение с сохранением сада. Значок в системном трее позволяет открыть капсулу, сад или выйти, даже если окно скрыто.
+Existing user-written task names are kept in their original language. The desktop save format is separate from the early web prototype.
 
-## Маленькие детали, которые помогают
+## Build
 
-- **Тёмная и светлая темы** — выбор сохраняется между запусками.
-- **15, 25 или 50 минут фокуса**, минутная демосессия и передышка на 5 минут.
-- Пауза, продолжение, подпись задачи и переключаемый звук завершения.
-- Четыре вида пиксельных растений, статистика и история последних 30 сессий.
-- Сад сохраняется в JSON, есть экспорт, импорт с объединением и резервная копия предыдущего сохранения.
-- Таймер учитывает прошедшее время после закрытия приложения: завершённая сессия засчитывается при следующем запуске. Закрытое приложение не воспроизводит уведомления.
-- Никаких сетевых запросов, трекеров или обязательных сервисов.
-
-На экране показаны последние 18 растений; статистика учитывает всю коллекцию. Передышки не дают растений. Таймер не контролирует твою активность — это инструмент для собственного ритма.
-
-## Где данные
-
-В папке `data` рядом с приложением: `data\garden.json`. Рядом хранится предыдущая версия `garden.json.bak`. Приложение полностью переносное: храни его в доступной для записи папке, например на D:. Экспортируй сад перед переустановкой Windows. Настольный формат сохранения отличается от ранней веб-версии.
-
-## Собрать самому
-
-Исходники — два файла C#, без NuGet и сторонних зависимостей. `FocusGarden.cs` — таймер, сад и сохранения; `Island.cs` — нативная капсула и анимация. Компилятор .NET Framework входит в поддерживаемые системы Windows.
+Run from a Windows PowerShell terminal:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+.\build.ps1
 ```
 
-Можно также открыть оба исходника в Visual Studio и собрать Windows Forms приложение для .NET Framework 4.8 с ссылкой на `System.Runtime.Serialization`.
+The build uses the .NET Framework compiler included with Windows. There are no NuGet dependencies. `FocusGarden.cs` contains the garden and timer, and `Island.cs` contains the floating window, presence state, and controls. The icon is embedded into the executable.
 
-## Идеи для вклада
+Run the logic and off-screen UI checks:
 
-Новые растения, локализация, произвольная длительность и улучшения доступности. Issues и pull requests приветствуются.
+```powershell
+$compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+& $compiler /nologo /target:exe /out:TestRunner.exe /resource:assets/app.ico,FocusGarden.Icon /resource:assets/app.png,FocusGarden.Mark /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll FocusGarden.cs Island.cs
+.\TestRunner.exe --self-test
+.\TestRunner.exe --render-preview preview
+```
 
-## Лицензия
+Tests cover save validation, timer deadlines, pause/resume, session completion without duplicates, auto-hide timing, hover dwell, pinning, and suspension. Preview checks use sample data and do not change your saved garden.
 
-MIT — можно изменять, распространять и использовать в своих проектах с сохранением лицензии.
+Icon artwork is generated by `tools/IconMaker.cs` at 16–256 px. To regenerate:
+
+```powershell
+& $compiler /nologo /out:IconMaker.exe /reference:System.Drawing.dll tools/IconMaker.cs
+.\IconMaker.exe assets
+```
+
+## License
+
+[MIT](LICENSE).

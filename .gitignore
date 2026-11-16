@@ -1,3 +1,6 @@
 data/
 *.tmp
 *.bak
+TestRunner.exe
+IconMaker.exe
+preview/
