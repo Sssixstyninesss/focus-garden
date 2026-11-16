@@ -31,8 +31,9 @@ public sealed class FocusIsland : Form {
  readonly PillButton toggle=new PillButton(),open=new PillButton(),rest=new PillButton(),collapse=new PillButton(),pin=new PillButton();
  readonly PillButton[] durations=new PillButton[4];
  readonly ToolTip tips=new ToolTip();
+ readonly TextBox taskEditor=new TextBox();
  readonly Color mint=Color.FromArgb(167,227,188),muted=Color.FromArgb(137,148,153);
- bool expanded,dragging,moved,rendering,suspended,reward=true;
+ bool expanded,dragging,moved,rendering,suspended,reward=true,choosingDuration;
  Point downMouse,downWindow,anchor;
  Rectangle hotspot;
  double celebrationUntil,transitionStart,fromWidth=328,fromHeight=64,toWidth=328,toHeight=64,fromOpacity=1,toOpacity=1;
@@ -46,39 +47,46 @@ public sealed class FocusIsland : Form {
   FormBorderStyle=FormBorderStyle.None; ShowInTaskbar=false; TopMost=true;
   StartPosition=FormStartPosition.Manual; Size=new Size(328,64); Icon=Garden.LoadIcon();
   var area=Screen.FromControl(garden).WorkingArea; anchor=new Point(area.Left+area.Width/2,area.Top+16);
+  if(garden.State.HasIslandPosition) { anchor=new Point(garden.State.IslandX,garden.State.IslandY); ClampAnchor(); }
+  presence.Pinned=garden.State.IslandPinned;
   Location=new Point(anchor.X-Width/2,anchor.Y); UpdateHotspot();
   BackColor=Color.FromArgb(16,20,24); ForeColor=Color.White; DoubleBuffered=true; KeyPreview=true; SetStyle(ControlStyles.ResizeRedraw,true);
   Setup(toggle,"Start focus",delegate { garden.ToggleFromIsland(); Touch(); });
   Setup(open,"Open garden",delegate { garden.ShowGarden(); });
   Setup(rest,"Break",delegate { garden.IslandBreak(); Touch(); });
   Setup(collapse,"−",delegate { SetExpanded(false); });
-  Setup(pin,"Pin",delegate { presence.Pinned=!presence.Pinned; Touch(); });
+  Setup(pin,"Pin",delegate { presence.Pinned=!presence.Pinned; garden.RememberIsland(anchor,presence.Pinned); Touch(); });
   tips.SetToolTip(collapse,"Collapse · Esc"); tips.SetToolTip(pin,"Keep the island visible");
-  for(int i=0;i<4;i++) { int minutes=new[]{15,25,50,1}[i]; durations[i]=new PillButton(); Setup(durations[i],minutes==1?"1m demo":minutes+"m",delegate { garden.IslandDuration(minutes); Touch(); }); durations[i].Font=new Font("Segoe UI",9); }
+  for(int i=0;i<4;i++) { int index=i,minutes=new[]{15,25,50,1}[i]; durations[i]=new PillButton(); Setup(durations[i],minutes+"m",delegate { if(index==3) { choosingDuration=true; try { garden.ChooseDuration(this); } finally { choosingDuration=false; } } else garden.IslandDuration(minutes); Touch(); }); durations[i].Font=new Font("Segoe UI",9); }
+  tips.SetToolTip(durations[3],"Choose a custom duration · 1 to 120 minutes");
+  taskEditor.BorderStyle=BorderStyle.None; taskEditor.BackColor=Color.FromArgb(30,38,43); taskEditor.ForeColor=Color.FromArgb(214,226,230); taskEditor.Font=new Font("Segoe UI",10); taskEditor.MaxLength=120; taskEditor.AccessibleName="Session task"; taskEditor.Text=garden.State.Task??""; Controls.Add(taskEditor);
+  taskEditor.TextChanged+=delegate { if(taskEditor.Focused) garden.SetIslandTask(taskEditor.Text); };
+  tips.SetToolTip(taskEditor,"Name your task · Ctrl+E to edit · Ctrl+Enter to start or pause");
   MouseDown+=delegate(object s,MouseEventArgs e) { if(e.Button!=MouseButtons.Left) return; dragging=true; moved=false; downMouse=Cursor.Position; downWindow=Location; Capture=true; Touch(); };
   MouseMove+=delegate { if(!dragging) return; var delta=new Point(Cursor.Position.X-downMouse.X,Cursor.Position.Y-downMouse.Y); if(Math.Abs(delta.X)+Math.Abs(delta.Y)>5) moved=true; if(moved) { Location=new Point(downWindow.X+delta.X,downWindow.Y+delta.Y); anchor=new Point(Left+Width/2,Top); UpdateHotspot(); } };
-  MouseUp+=delegate { if(!dragging) return; dragging=false; Capture=false; if(moved) ClampAnchor(); else SetExpanded(!expanded); Touch(); };
+  MouseUp+=delegate { if(!dragging) return; dragging=false; Capture=false; if(moved) { ClampAnchor(); garden.RememberIsland(anchor,presence.Pinned); } else SetExpanded(!expanded); Touch(); };
   MouseCaptureChanged+=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) dragging=false; };
   KeyDown+=delegate(object s,KeyEventArgs e) { if(e.KeyCode==Keys.Escape) { SetExpanded(false); e.Handled=true; } if(e.KeyCode==Keys.Space && ActiveControl==null) { garden.ToggleFromIsland(); Touch(); e.Handled=true; } if(e.KeyCode==Keys.F2) garden.ShowGarden(); };
+  KeyDown+=delegate(object s,KeyEventArgs e) { if(e.Control && e.KeyCode==Keys.Enter) { garden.ToggleFromIsland(); Touch(); e.SuppressKeyPress=true; } if(e.Control && e.KeyCode==Keys.E) { SetExpanded(true); if(garden.State.ReducedMotion) { taskEditor.Focus(); taskEditor.SelectAll(); } else { var focusTimer=new Timer { Interval=450 }; focusTimer.Tick+=delegate { focusTimer.Dispose(); if(!IsDisposed && Visible && expanded) { taskEditor.Focus(); taskEditor.SelectAll(); } }; focusTimer.Start(); } e.SuppressKeyPress=true; } };
   Resize+=delegate { UpdateRegion(); LayoutButtons(); };
   animation.Interval=16; animation.Tick+=delegate { Frame(); }; animation.Start();
-  presence.Wake(Now); UpdateRegion(); LayoutButtons(); RefreshButtons();
+  presence.Wake(Now); UpdateRegion(); LayoutButtons(); RefreshButtons(); ApplyMotion();
  }
  public void Reveal() { suspended=false; presence.Enabled=true; presence.Wake(Now); expanded=false; BeginTransition(328,64,1); Show(); animation.Start(); }
  public void Suspend() { suspended=true; presence.Enabled=false; Hide(); animation.Stop(); }
  void Touch() { presence.Wake(Now); RefreshButtons(); }
  static double Ease(double t) { t=Math.Max(0,Math.Min(1,t)); return 1-Math.Pow(1-t,5); }
- void BeginTransition(int width,int height,double opacity) { fromWidth=Width; fromHeight=Height; fromOpacity=Opacity; toWidth=width; toHeight=height; toOpacity=opacity; transitionStart=Now; foreach(Control c in Controls) c.Visible=false; animation.Interval=16; }
+ void BeginTransition(int width,int height,double opacity) { fromWidth=Width; fromHeight=Height; fromOpacity=Opacity; toWidth=width; toHeight=height; toOpacity=opacity; transitionStart=Now; foreach(Control c in Controls) c.Visible=false; animation.Interval=16; if(garden.State.ReducedMotion) { SetBounds(anchor.X-width/2,anchor.Y,width,height); Opacity=Math.Max(.01,opacity); LayoutButtons(); } }
  void Frame() {
   if(rendering || suspended) return;
   double now=Now;
   Point pointer=testPointer??Cursor.Position;
-  bool over=Visible && Bounds.Contains(pointer),busy=dragging || now<celebrationUntil;
+  bool over=Visible && Bounds.Contains(pointer),busy=dragging || choosingDuration || taskEditor.Focused || now<celebrationUntil;
   if(presence.Update(now,over,hotspot.Contains(pointer),busy)) {
    if(presence.Sleeping) { expanded=false; BeginTransition(300,56,.01); }
    else { expanded=false; BeginTransition(328,64,1); Show(); }
   }
-  double fraction=(now-transitionStart)/Duration,t=Ease(fraction);
+  double fraction=garden.State.ReducedMotion?1:(now-transitionStart)/Duration,t=Ease(fraction);
   int w=(int)Math.Round(fromWidth+(toWidth-fromWidth)*t),h=(int)Math.Round(fromHeight+(toHeight-fromHeight)*t);
   if(!dragging) SetBounds(anchor.X-w/2,anchor.Y,w,h);
   Opacity=Math.Max(.01,Math.Min(1,fromOpacity+(toOpacity-fromOpacity)*t));
@@ -88,12 +96,13 @@ public sealed class FocusIsland : Form {
  }
  void Setup(PillButton b,string text,Action action) { b.Text=text; b.Font=new Font("Segoe UI",10); b.Click+=delegate { action(); }; Controls.Add(b); }
  public void SetExpanded(bool value) { expanded=value; Touch(); BeginTransition(value?448:328,value?314:64,1); }
- void ClampAnchor() { var area=Screen.FromRectangle(Bounds).WorkingArea; anchor.X=Math.Max(area.Left+224,Math.Min(anchor.X,area.Right-224)); anchor.Y=Math.Max(area.Top,Math.Min(anchor.Y,area.Bottom-314)); UpdateHotspot(); Location=new Point(anchor.X-Width/2,anchor.Y); }
+ void ClampAnchor() { var area=Screen.FromPoint(anchor).WorkingArea; anchor.X=Math.Max(area.Left+224,Math.Min(anchor.X,area.Right-224)); anchor.Y=Math.Max(area.Top,Math.Min(anchor.Y,area.Bottom-314)); UpdateHotspot(); Location=new Point(anchor.X-Width/2,anchor.Y); }
  void UpdateHotspot() { hotspot=new Rectangle(anchor.X-164,anchor.Y,328,64); }
  void UpdateRegion() { using(var path=Shapes.Round(new Rectangle(0,0,Width,Height),expanded?30:Height/2)) { var old=Region; Region=new Region(path); if(old!=null) old.Dispose(); } }
  void LayoutButtons() {
   bool show=expanded && Height>=310 && !presence.Sleeping; foreach(Control c in Controls) c.Visible=show;
   pin.SetBounds(318,19,58,28); collapse.SetBounds(384,19,38,28);
+  taskEditor.SetBounds(38,145,370,21);
   for(int i=0;i<4;i++) durations[i].SetBounds(26+i*72,176,64,32);
   rest.SetBounds(322,176,100,32); toggle.SetBounds(26,246,238,44); open.SetBounds(274,246,148,44);
  }
@@ -101,17 +110,20 @@ public sealed class FocusIsland : Form {
   var s=garden.State;
   toggle.Text=s.Running?"Pause session":s.Remaining<s.Minutes*60?"Resume session":s.Rest?"Start break":"Start focus";
   toggle.Primary=true; pin.Selected=presence.Pinned; pin.Text=presence.Pinned?"Pinned":"Pin";
-  for(int i=0;i<4;i++) { durations[i].Enabled=!s.Running; durations[i].Selected=s.Minutes==new[]{15,25,50,1}[i]; }
+  for(int i=0;i<4;i++) { durations[i].Enabled=!s.Running; durations[i].Selected=s.Minutes==(i==3?s.CustomMinutes:new[]{15,25,50,1}[i]); }
+  durations[3].Text=s.CustomMinutes+"m +";
+  if(!taskEditor.Focused && taskEditor.Text!=(s.Task??"")) taskEditor.Text=s.Task??"";
   rest.Enabled=!s.Running; rest.Text=s.Rest?"Focus":"Break";
   AccessibleDescription=garden.TimeText+" remaining. Click to expand. Drag to move. Hover over the previous position to reveal. F2 opens the garden.";
  }
+ public void ApplyMotion() { foreach(Control c in Controls) { var button=c as PillButton; if(button!=null) button.ReducedMotion=garden.State.ReducedMotion; } }
  public void Celebrate(bool planted=true) { reward=planted; celebrationUntil=Now+8; if(suspended) return; presence.Wake(Now); expanded=true; BeginTransition(448,314,1); Show(); }
  protected override void OnPaint(PaintEventArgs e) {
   base.OnPaint(e); var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias;
   double now=Now; bool party=now<celebrationUntil; var s=garden.State;
   using(var gradient=new LinearGradientBrush(ClientRectangle,Color.FromArgb(26,32,37),Color.FromArgb(13,17,20),90f)) g.FillRectangle(gradient,ClientRectangle);
   using(var path=Shapes.Round(new Rectangle(1,1,Width-3,Height-3),expanded?29:Height/2-1)) using(var line=new Pen(Color.FromArgb(53,64,69))) g.DrawPath(line,path);
-  float breathe=s.Running?(float)Math.Sin(now*2.3)*1.2f:0;
+  float breathe=s.Running && !s.ReducedMotion?(float)Math.Sin(now*2.3)*1.2f:0;
   using(var ring=new Pen(Color.FromArgb(48,61,58),2)) g.DrawEllipse(ring,20,17,30,30);
   using(var ring=new Pen(mint,2)) { ring.StartCap=LineCap.Round; ring.EndCap=LineCap.Round; g.DrawArc(ring,20,17,30,30,-90,(float)Math.Max(3,garden.Progress*360)); }
   using(var stem=new Pen(mint,1.8f)) { stem.StartCap=LineCap.Round; stem.EndCap=LineCap.Round; g.DrawLine(stem,35,39,35,29); g.DrawLine(stem,35,34,29,30-breathe); g.DrawLine(stem,35,30,41,26-breathe); }
@@ -125,10 +137,10 @@ public sealed class FocusIsland : Form {
    DrawText(g,garden.TimeText,43,FontStyle.Regular,new Rectangle(23,67,245,74),Color.FromArgb(241,246,246));
    DrawText(g,party && reward?"+1 plant":s.Plants.Count+(s.Plants.Count==1?" plant":" plants"),12,FontStyle.Bold,new Rectangle(309,86,112,24),mint);
    DrawText(g,"in your garden",8,FontStyle.Regular,new Rectangle(309,112,112,20),muted);
-   DrawText(g,String.IsNullOrWhiteSpace(s.Task)?"Set a task in your garden":s.Task,10,FontStyle.Regular,new Rectangle(27,140,394,25),Color.FromArgb(169,183,188));
+   using(var field=new SolidBrush(Color.FromArgb(30,38,43))) using(var shape=Shapes.Round(new Rectangle(26,139,396,30),9)) g.FillPath(field,shape);
    using(var track=new SolidBrush(Color.FromArgb(43,53,58))) g.FillRectangle(track,27,226,394,3);
    using(var fill=new SolidBrush(mint)) g.FillRectangle(fill,27,226,(float)(394*garden.Progress),3);
-   if(party) for(int i=0;i<10;i++) { double angle=i*.68+now*.25; float x=357+(float)Math.Cos(angle)*56,y=101+(float)Math.Sin(angle)*31; using(var b=new SolidBrush(i%2==0?mint:Color.FromArgb(182,174,218))) g.FillEllipse(b,x,y,2,2); }
+   if(party && !s.ReducedMotion) for(int i=0;i<10;i++) { double angle=i*.68+now*.25; float x=357+(float)Math.Cos(angle)*56,y=101+(float)Math.Sin(angle)*31; using(var b=new SolidBrush(i%2==0?mint:Color.FromArgb(182,174,218))) g.FillEllipse(b,x,y,2,2); }
   }
  }
  static void DrawText(Graphics g,string value,int size,FontStyle style,Rectangle bounds,Color color) { using(var font=new Font("Segoe UI",size,style)) TextRenderer.DrawText(g,value,font,bounds,color,TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter); }
@@ -155,13 +167,13 @@ public static class Shapes {
 }
 
 public class PillButton : Button {
- public bool Primary,Selected,UseControlColors,Destructive;
+ public bool Primary,Selected,UseControlColors,Destructive,ReducedMotion;
  float hover; bool over;
  readonly Timer motion=new Timer();
  public PillButton() {
   FlatStyle=FlatStyle.Flat; FlatAppearance.BorderSize=0; Cursor=Cursors.Hand; DoubleBuffered=true; SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
   motion.Interval=16; motion.Tick+=delegate { float target=over?1:0; hover+=(target-hover)*.22f; if(Math.Abs(target-hover)<.01f) { hover=target; motion.Stop(); } Invalidate(); };
-  MouseEnter+=delegate { over=true; motion.Start(); }; MouseLeave+=delegate { over=false; motion.Start(); };
+  MouseEnter+=delegate { over=true; if(ReducedMotion) { hover=1; Invalidate(); } else motion.Start(); }; MouseLeave+=delegate { over=false; if(ReducedMotion) { hover=0; Invalidate(); } else motion.Start(); };
  }
  protected override void OnPaint(PaintEventArgs e) {
   var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias; Color basis=UseControlColors?BackColor:Primary?Color.FromArgb(167,227,188):Selected?Color.FromArgb(49,75,65):Color.FromArgb(34,42,47);
@@ -173,4 +185,22 @@ public class PillButton : Button {
   if(Focused) using(var p=new Pen(Color.FromArgb(132,159,148))) using(var path=Shapes.Round(new Rectangle(3,3,Width-7,Height-7),9)) g.DrawPath(p,path);
  }
  protected override void Dispose(bool disposing) { if(disposing) motion.Dispose(); base.Dispose(disposing); }
+}
+
+public sealed class DurationPicker : Form {
+ readonly TextBox minutes=new TextBox();
+ public int Minutes { get { int value; return TryParseMinutes(minutes.Text,out value)?value:35; } }
+ public static bool TryParseMinutes(string text,out int selected) { return int.TryParse(text,out selected) && selected>=1 && selected<=120; }
+ public DurationPicker(int initial,bool reducedMotion=false) {
+  Text="Custom duration"; Icon=Garden.LoadIcon(); FormBorderStyle=FormBorderStyle.None; StartPosition=FormStartPosition.CenterParent; ShowInTaskbar=false; TopMost=true; ClientSize=new Size(320,210); BackColor=Color.FromArgb(22,29,34); ForeColor=Color.FromArgb(230,240,241); Font=new Font("Segoe UI",10);
+  Controls.Add(new Label { Text="Custom duration",Location=new Point(24,20),Size=new Size(272,28),Font=new Font("Segoe UI",15,FontStyle.Bold) });
+  var help=new Label { Text="Minutes · 1 to 120",Location=new Point(26,58),Size=new Size(270,23),ForeColor=Color.FromArgb(149,168,175) }; Controls.Add(help);
+  minutes.Text=Math.Max(1,Math.Min(120,initial)).ToString(); minutes.MaxLength=3; minutes.SetBounds(26,91,174,36); minutes.Font=new Font("Segoe UI",18); minutes.BackColor=Color.FromArgb(34,44,50); minutes.ForeColor=ForeColor; minutes.BorderStyle=BorderStyle.FixedSingle; minutes.AccessibleName="Session duration in minutes"; Controls.Add(minutes);
+  var less=new PillButton { Text="−",ReducedMotion=reducedMotion,Location=new Point(212,91),Size=new Size(36,38),AccessibleName="Decrease minutes" }; less.Click+=delegate { minutes.Text=Math.Max(1,Minutes-1).ToString(); }; Controls.Add(less);
+  var more=new PillButton { Text="+",ReducedMotion=reducedMotion,Location=new Point(258,91),Size=new Size(36,38),AccessibleName="Increase minutes" }; more.Click+=delegate { minutes.Text=Math.Min(120,Minutes+1).ToString(); }; Controls.Add(more);
+  var cancel=new PillButton { Text="Cancel",ReducedMotion=reducedMotion,Location=new Point(26,153),Size=new Size(125,36),DialogResult=DialogResult.Cancel }; Controls.Add(cancel);
+  var apply=new PillButton { Text="Set duration",ReducedMotion=reducedMotion,Primary=true,Location=new Point(161,153),Size=new Size(133,36) }; apply.Click+=delegate { int selected; if(!TryParseMinutes(minutes.Text,out selected)) { help.Text="Enter a whole number from 1 to 120."; return; } minutes.Text=selected.ToString(); DialogResult=DialogResult.OK; }; Controls.Add(apply);
+  AcceptButton=apply; CancelButton=cancel;
+  using(var shape=Shapes.Round(ClientRectangle,20)) Region=new Region(shape);
+ }
 }
