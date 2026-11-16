@@ -31,7 +31,8 @@ public sealed class FocusIsland : Form {
  readonly PillButton toggle=new PillButton(),open=new PillButton(),rest=new PillButton(),collapse=new PillButton(),pin=new PillButton();
  readonly PillButton[] durations=new PillButton[4];
  readonly ToolTip tips=new ToolTip();
- readonly TextBox taskEditor=new TextBox();
+ readonly TextBox taskEditor=new CueTextBox { Cue="Name this session" };
+ readonly PillButton queueButton=new PillButton();
  readonly Color mint=Color.FromArgb(167,227,188),muted=Color.FromArgb(137,148,153);
  bool expanded,dragging,moved,rendering,suspended,reward=true,choosingDuration;
  Point downMouse,downWindow,anchor;
@@ -62,8 +63,9 @@ public sealed class FocusIsland : Form {
   taskEditor.BorderStyle=BorderStyle.None; taskEditor.BackColor=Color.FromArgb(30,38,43); taskEditor.ForeColor=Color.FromArgb(214,226,230); taskEditor.Font=new Font("Segoe UI",10); taskEditor.MaxLength=120; taskEditor.AccessibleName="Session task"; taskEditor.Text=garden.State.Task??""; Controls.Add(taskEditor);
   taskEditor.TextChanged+=delegate { if(taskEditor.Focused) garden.SetIslandTask(taskEditor.Text); };
   tips.SetToolTip(taskEditor,"Name your task · Ctrl+E to edit · Ctrl+Enter to start or pause");
+  Setup(queueButton,"▾",ShowQueueMenu); queueButton.AccessibleName="Choose a queued task"; tips.SetToolTip(queueButton,"Choose a task from your queue");
   MouseDown+=delegate(object s,MouseEventArgs e) { if(e.Button!=MouseButtons.Left) return; dragging=true; moved=false; downMouse=Cursor.Position; downWindow=Location; Capture=true; Touch(); };
-  MouseMove+=delegate { if(!dragging) return; var delta=new Point(Cursor.Position.X-downMouse.X,Cursor.Position.Y-downMouse.Y); if(Math.Abs(delta.X)+Math.Abs(delta.Y)>5) moved=true; if(moved) { Location=new Point(downWindow.X+delta.X,downWindow.Y+delta.Y); anchor=new Point(Left+Width/2,Top); UpdateHotspot(); } };
+  MouseMove+=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) dragging=false; if(!dragging) return; var delta=new Point(Cursor.Position.X-downMouse.X,Cursor.Position.Y-downMouse.Y); if(Math.Abs(delta.X)+Math.Abs(delta.Y)>5) moved=true; if(moved) { Location=new Point(downWindow.X+delta.X,downWindow.Y+delta.Y); anchor=new Point(Left+Width/2,Top); UpdateHotspot(); } };
   MouseUp+=delegate { if(!dragging) return; dragging=false; Capture=false; if(moved) { ClampAnchor(); garden.RememberIsland(anchor,presence.Pinned); } else SetExpanded(!expanded); Touch(); };
   MouseCaptureChanged+=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) dragging=false; };
   KeyDown+=delegate(object s,KeyEventArgs e) { if(e.KeyCode==Keys.Escape) { SetExpanded(false); e.Handled=true; } if(e.KeyCode==Keys.Space && ActiveControl==null) { garden.ToggleFromIsland(); Touch(); e.Handled=true; } if(e.KeyCode==Keys.F2) garden.ShowGarden(); };
@@ -72,7 +74,7 @@ public sealed class FocusIsland : Form {
   animation.Interval=16; animation.Tick+=delegate { Frame(); }; animation.Start();
   presence.Wake(Now); UpdateRegion(); LayoutButtons(); RefreshButtons(); ApplyMotion();
  }
- public void Reveal() { suspended=false; presence.Enabled=true; presence.Wake(Now); expanded=false; BeginTransition(328,64,1); Show(); animation.Start(); }
+ public void Reveal() { suspended=false; presence.Enabled=true; presence.Wake(Now); expanded=false; if(testTime<0 && !rendering) ClampAnchor(); BeginTransition(328,64,1); Show(); animation.Start(); }
  public void Suspend() { suspended=true; presence.Enabled=false; Hide(); animation.Stop(); }
  void Touch() { presence.Wake(Now); RefreshButtons(); }
  static double Ease(double t) { t=Math.Max(0,Math.Min(1,t)); return 1-Math.Pow(1-t,5); }
@@ -86,6 +88,7 @@ public sealed class FocusIsland : Form {
    if(presence.Sleeping) { expanded=false; BeginTransition(300,56,.01); }
    else { expanded=false; BeginTransition(328,64,1); Show(); }
   }
+  if(presence.Sleeping && !Visible) { animation.Interval=80; return; }
   double fraction=garden.State.ReducedMotion?1:(now-transitionStart)/Duration,t=Ease(fraction);
   int w=(int)Math.Round(fromWidth+(toWidth-fromWidth)*t),h=(int)Math.Round(fromHeight+(toHeight-fromHeight)*t);
   if(!dragging) SetBounds(anchor.X-w/2,anchor.Y,w,h);
@@ -102,7 +105,7 @@ public sealed class FocusIsland : Form {
  void LayoutButtons() {
   bool show=expanded && Height>=310 && !presence.Sleeping; foreach(Control c in Controls) c.Visible=show;
   pin.SetBounds(318,19,58,28); collapse.SetBounds(384,19,38,28);
-  taskEditor.SetBounds(38,145,370,21);
+  taskEditor.SetBounds(38,145,330,21); queueButton.SetBounds(382,142,30,24);
   for(int i=0;i<4;i++) durations[i].SetBounds(26+i*72,176,64,32);
   rest.SetBounds(322,176,100,32); toggle.SetBounds(26,246,238,44); open.SetBounds(274,246,148,44);
  }
@@ -114,9 +117,22 @@ public sealed class FocusIsland : Form {
   durations[3].Text=s.CustomMinutes+"m +";
   if(!taskEditor.Focused && taskEditor.Text!=(s.Task??"")) taskEditor.Text=s.Task??"";
   rest.Enabled=!s.Running; rest.Text=s.Rest?"Focus":"Break";
+  queueButton.Enabled=!s.Running;
   AccessibleDescription=garden.TimeText+" remaining. Click to expand. Drag to move. Hover over the previous position to reveal. F2 opens the garden.";
  }
  public void ApplyMotion() { foreach(Control c in Controls) { var button=c as PillButton; if(button!=null) button.ReducedMotion=garden.State.ReducedMotion; } }
+ void ShowQueueMenu() {
+  choosingDuration=true;
+  var menu=new ContextMenuStrip { BackColor=Color.FromArgb(26,34,39),ForeColor=Color.FromArgb(228,238,240),ShowImageMargin=false,Renderer=new ToolStripProfessionalRenderer(new IslandMenuColors()) };
+  int pending=0;
+  foreach(var queued in garden.State.Tasks) if(!queued.Done && !queued.Archived) { var selected=queued; string label=queued.Title.Replace("\r"," ").Replace("\n"," "); if(label.Length>60) label=label.Substring(0,57)+"…"; var item=menu.Items.Add(label.Replace("&","&&")); item.ToolTipText=queued.Title; item.Click+=delegate { garden.SelectQueuedTask(selected.Id); Touch(); }; pending++; if(pending==20) break; }
+  if(pending==0) menu.Items.Add("No pending tasks").Enabled=false;
+  menu.Items.Add(new ToolStripSeparator());
+  if(!String.IsNullOrEmpty(garden.State.ActiveTaskId)) { string id=garden.State.ActiveTaskId; menu.Items.Add("Mark current task done",null,delegate { garden.CompleteQueuedTask(id); Touch(); }); }
+  menu.Items.Add("Manage tasks…",null,delegate { garden.ShowTasks(); });
+  menu.Closed+=delegate { choosingDuration=false; menu.Dispose(); Touch(); };
+  menu.Show(this,new Point(26,171));
+ }
  public void Celebrate(bool planted=true) { reward=planted; celebrationUntil=Now+8; if(suspended) return; presence.Wake(Now); expanded=true; BeginTransition(448,314,1); Show(); }
  protected override void OnPaint(PaintEventArgs e) {
   base.OnPaint(e); var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias;
@@ -177,6 +193,15 @@ public sealed class FocusIsland : Form {
   Suspend();
  }
  protected override void Dispose(bool disposing) { if(disposing) { animation.Dispose(); tips.Dispose(); } base.Dispose(disposing); }
+}
+
+public sealed class IslandMenuColors : ProfessionalColorTable {
+ public override Color ToolStripDropDownBackground { get { return Color.FromArgb(26,34,39); } }
+ public override Color MenuBorder { get { return Color.FromArgb(60,77,81); } }
+ public override Color MenuItemSelected { get { return Color.FromArgb(48,69,60); } }
+ public override Color MenuItemBorder { get { return Color.FromArgb(85,116,98); } }
+ public override Color MenuItemSelectedGradientBegin { get { return MenuItemSelected; } }
+ public override Color MenuItemSelectedGradientEnd { get { return MenuItemSelected; } }
 }
 
 public static class Shapes {

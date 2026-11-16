@@ -3,13 +3,15 @@
 <p align="center">A Windows focus timer with an auto-hiding desktop island.</p>
 <p align="center"><a href="https://github.com/Sssixstyninesss/focus-garden/releases/latest">Download for Windows</a> · <a href="#controls">Controls</a> · <a href="#build">Build from source</a></p>
 
-<p align="center"><img src="docs/island-motion-1.4.gif" width="500" alt="Focus Island expanding, showing session completion, and collapsing"></p>
+<p align="center"><img src="docs/island-motion-1.5.gif" width="500" alt="Focus Island expanding, showing session completion, and collapsing"></p>
 
 *Animation rendered by the application with sample data.*
 
 The island shows your timer above other windows. Move the pointer away and it fades out. Hover over its previous position to bring it back. Click to expand the controls or drag the background to move it.
 
 Completed focus sessions add plants to a local garden. Open the full window to name a task, view your sessions, change the theme, or export a backup.
+
+The main window has three views: **Garden**, **Week**, and **Tasks**. The timer remains available while switching views.
 
 ## Install
 
@@ -25,6 +27,8 @@ To update, quit through the tray menu and replace the executable. Keep the adjac
 - Size and opacity transitions with time-based easing; animated button hover states.
 - Pin mode to keep the island visible.
 - Task editing directly inside the expanded island.
+- A persistent task queue with selection, completion, reopening, and archiving. Choose a queued task from the arrow beside the island's task field.
+- A seven-day overview of focus minutes, sessions, and completed tasks. Click a day to inspect its sessions or export the week as CSV.
 - Custom sessions from 1 to 120 minutes, available through the `35m +` button or **Custom time** in the garden. The custom button shows your last chosen duration.
 - Saved island position, pin state, sound, and motion preferences. Positions are kept within the current monitor's work area when restored.
 - Reduced motion mode, with immediate transitions and no decorative animation.
@@ -37,7 +41,7 @@ To update, quit through the tray menu and replace the executable. Keep the adjac
 - Choose the next plant from **Seeds**: sunflower, pine, blossom, mushroom, or a random mix.
 - Portable storage. No network requests, accounts, telemetry, or subscriptions.
 
-<p align="center"><img src="docs/island-compact-1.4-en.png" alt="Compact timer"></p>
+<p align="center"><img src="docs/island-compact-1.5-en.png" alt="Compact timer"></p>
 
 ## Controls
 
@@ -60,15 +64,15 @@ The hidden island is a hidden window, not a transparent overlay: it does not int
 
 The tray menu also has a start/pause command. **Sound** and **Motion** settings are available in the garden window.
 
-![Custom duration](docs/custom-duration-1.4-en.png)
+![Custom duration](docs/custom-duration-1.5-en.png)
 
 ## Garden
 
-![Dark theme](docs/dark-theme-1.4-en.png)
+![Dark theme](docs/dark-theme-1.5-en.png)
 
 <details><summary>Light theme</summary>
 
-![Light theme](docs/light-theme-1.4-en.png)
+![Light theme](docs/light-theme-1.5-en.png)
 
 </details>
 
@@ -80,9 +84,31 @@ A streak counts consecutive local calendar days with at least one completed focu
 
 The timer uses a deadline. If you close the app during a session, the elapsed time is accounted for on the next launch. Notifications only run while the app is open. The timer does not monitor whether you are working.
 
+## Tasks and weekly statistics
+
+![Task queue](docs/tasks-1.5-en.png)
+
+Add a task in **Tasks**, click its title to select it for focus, and use the circle to mark it done or reopen it. The `×` action archives a task. **Archive done** clears completed tasks from the visible queue while keeping their records for statistics.
+
+Open **Archived** and use `↶` to restore a task. Archiving does not permanently delete its record.
+
+In the task list, use Up/Down to move, Enter to select, Space to toggle completion, and Delete to archive. A task can take several focus sessions; completing a timer does not automatically mark the task done. Pause the timer before changing or completing its active queued task. Editing the selected task in the timer or island also updates its queue title.
+
+The island menu shows up to 20 pending tasks; **Manage tasks** opens the full queue. Up to 200 tasks can remain visible, with 5,000 records stored including archived tasks.
+
+![Weekly overview](docs/week-1.5-en.png)
+
+**Week** covers today and the preceding six local calendar days. **Tasks done** counts currently completed tasks by their completion date, including archived records. Reopening a task removes its completion from that count. CSV export contains one row per day with focus minutes, sessions, and completed tasks.
+
+Click a chart day to filter the history below it. Use **All sessions** to return to the recent list.
+
 ## Data
 
-Saved in `data/garden.json` beside the executable. `data/garden.json.bak` holds the previous save. Use **Export garden** for a separate backup; **Import garden** merges sessions and skips duplicates.
+Saved in `data/garden.json` beside the executable. `data/garden.json.bak` holds the previous save. Use **Export garden** for a separate backup; **Import garden** merges sessions and tasks. Existing local task state takes precedence when an imported task has the same ID. Repeated imports skip duplicates.
+
+Writes use a temporary file, flush to disk, and replace the previous save. If the primary file is unreadable, the app tries its backup and preserves unreadable originals as `.recovery-*` files. If those originals cannot be moved, automatic writes are disabled and the app asks you to export elsewhere.
+
+Text edits are saved after a short pause in typing; closing the app or starting a session saves immediately.
 
 Existing user-written task names are kept in their original language. The desktop save format is separate from the early web prototype.
 
@@ -94,23 +120,21 @@ Run from a Windows PowerShell terminal:
 .\build.ps1
 ```
 
-The build uses the .NET Framework compiler included with Windows. There are no NuGet dependencies. `FocusGarden.cs` contains the garden and timer, and `Island.cs` contains the floating window, presence state, and controls. The icon is embedded into the executable.
+The build uses the .NET Framework compiler included with Windows. There are no NuGet dependencies. `FocusGarden.cs` contains the garden and timer; `Island.cs` contains the floating window; `Planning.cs` contains tasks and weekly statistics; `Storage.cs` handles save validation and recovery. The icon is embedded into the executable.
 
-Run the logic and off-screen UI checks:
+Run the regression and off-screen UI checks:
+
+```powershell
+.\test.ps1
+```
+
+Tests cover save validation and migration, preference persistence, custom duration input, timer deadlines, task synchronization, pause/resume, selected seeds, streaks, task selection and archiving, keyboard navigation, week boundaries, CSV output, idempotent imports, corrupt and locked files, recovery, auto-hide, hover dwell, reduced motion, and suspension. Test artifacts go into the ignored `work` folder. Preview checks use sample data and do not change your saved garden.
+
+Icon artwork is generated by `tools\IconMaker.cs` at 16–256 px. To regenerate:
 
 ```powershell
 $compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-& $compiler /nologo /target:exe /out:TestRunner.exe /resource:assets/app.ico,FocusGarden.Icon /resource:assets/app.png,FocusGarden.Mark /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll FocusGarden.cs Island.cs
-.\TestRunner.exe --self-test
-.\TestRunner.exe --render-preview preview
-```
-
-Tests cover save validation and migration, preference persistence, custom duration input, timer deadlines, task synchronization, pause/resume, selected seeds, streak gaps and duplicate days, session completion without duplicates, auto-hide timing, hover dwell, pinning, position restore, reduced motion, and suspension. Preview checks use sample data and do not change your saved garden.
-
-Icon artwork is generated by `tools/IconMaker.cs` at 16–256 px. To regenerate:
-
-```powershell
-& $compiler /nologo /out:IconMaker.exe /reference:System.Drawing.dll tools/IconMaker.cs
+& $compiler /nologo /out:IconMaker.exe /reference:System.Drawing.dll tools\IconMaker.cs
 .\IconMaker.exe assets
 ```
 
