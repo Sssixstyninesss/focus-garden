@@ -10,8 +10,8 @@ using System.Runtime.Serialization.Json;
 
 [assembly: System.Reflection.AssemblyTitle("Focus Garden")]
 [assembly: System.Reflection.AssemblyProduct("Focus Garden")]
-[assembly: System.Reflection.AssemblyVersion("1.5.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.5.1.0")]
 
 [DataContract] public class Plant {
  [DataMember] public string Task;
@@ -46,19 +46,19 @@ public class Garden : Form {
  string savePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "garden.json");
  Label clock = new Label(), hint = new Label(), stats = new Label(), title = new Label(), tagline = new Label(), taskLabel = new Label(), gardenLabel = new Label();
  TextBox task = new CueTextBox { Cue="Name your focus session" }; SessionList history = new SessionList();
- Button start, reset, theme, mode, export, import;
- List<Button> durations = new List<Button>();
+ PillButton start, reset, theme, mode, export, import;
+ List<PillButton> durations = new List<PillButton>();
  Panel timerPanel = new Card(), gardenPanel = new Card();
  Canvas canvas = new Canvas();
  System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer();
- bool loading = true; Button soundButton,motionButton;
+ bool loading = true; PillButton soundButton,motionButton;
  Color bg, panel, ink, muted, border, accent;
  FocusIsland island;
  NotifyIcon tray;
  bool exiting, previewMode;
  Panel windowHeader;
- Button minimizeButton, closeButton;
- Button speciesButton,goalButton;
+ PillButton minimizeButton, closeButton;
+ PillButton speciesButton,goalButton;
  Canvas dailyStats=new Canvas();
  readonly List<Tuple<Rectangle,Plant>> plantHits=new List<Tuple<Rectangle,Plant>>();
  readonly System.Windows.Forms.Timer ambience=new System.Windows.Forms.Timer();
@@ -69,14 +69,15 @@ public class Garden : Form {
  readonly TextBox queueInput=new CueTextBox { Cue="Add a task…" };
  readonly Label queueCount=new Label();
  List<Control> greenhouseControls;
- Button gardenTab,weekTab,tasksTab;
+ PillButton gardenTab,weekTab,tasksTab;
  string currentView="Garden";
  bool storageReadOnly;
  Label historyHeading;
- Button resetHistory;
- Button archiveViewButton;
+ PillButton resetHistory;
+ PillButton archiveViewButton;
  DateTime displayedDay=DateTime.Today,cachedDay=DateTime.MinValue;
  int revision,todayRevision=-1,cachedTodayMinutes;
+ internal bool IslandModeRequested;
  readonly System.Windows.Forms.Timer saveDelay=new System.Windows.Forms.Timer();
  [STAThread] public static void Main(string[] args) {
   if (args.Contains("--self-test")) { SelfTest(); return; }
@@ -131,14 +132,14 @@ public class Garden : Form {
   if(!previewMode) { var loaded=GardenStorage.Load(savePath); data=loaded.Data; storageReadOnly=loaded.ReadOnly; loadNotice=loaded.Notice; }
   title=LabelAt(this,"Focus Garden",82,22,400,46,24,FontStyle.Bold);
   var mark=new PictureBox { Image=LoadMark(),SizeMode=PictureBoxSizeMode.Zoom,Location=new Point(34,28),Size=new Size(36,36) }; Controls.Add(mark);
-  tagline=LabelAt(this,"DESKTOP FOCUS TIMER",34,78,600,28,10,FontStyle.Regular);
+  tagline=LabelAt(this,"DESKTOP FOCUS TIMER",34,78,550,28,10,FontStyle.Regular);
   theme=ButtonAt(this,"Light theme",820,28,200,38,delegate { data.Dark=!data.Dark; ApplyTheme(); Save(); });
   soundButton=ButtonAt(this,data.Sound?"Sound: on":"Sound: off",820,76,200,32,delegate { data.Sound=!data.Sound; soundButton.Text=data.Sound?"Sound: on":"Sound: off"; Save(); });
   motionButton=ButtonAt(this,data.ReducedMotion?"Motion: reduced":"Motion: full",610,76,190,32,delegate { data.ReducedMotion=!data.ReducedMotion; motionButton.Text=data.ReducedMotion?"Motion: reduced":"Motion: full"; ApplyMotion(this); if(island!=null) island.ApplyMotion(); Save(); });
   ButtonAt(this,"Focus Island",610,28,190,38,ShowIsland);
   timerPanel.SetBounds(30,130,430,430); Controls.Add(timerPanel);
   gardenPanel.SetBounds(480,130,550,430); Controls.Add(gardenPanel);
-  LabelAt(timerPanel,"FOCUS",24,20,370,24,10,FontStyle.Regular);
+  LabelAt(timerPanel,"FOCUS",24,20,240,24,10,FontStyle.Regular);
   ButtonAt(timerPanel,"Custom time",286,16,120,28,delegate { ChooseDuration(this); });
   mode=ButtonAt(timerPanel,"Focus · switch to break",24,58,382,36,delegate { if(data.Running) { hint.Text="Pause the timer before switching modes."; return; } data.Rest=!data.Rest; SetDuration(data.Rest?5:25); });
   clock=LabelAt(timerPanel,"25:00",20,102,390,98,64,FontStyle.Regular); clock.TextAlign=ContentAlignment.MiddleCenter;
@@ -162,7 +163,7 @@ public class Garden : Form {
   weekView.ExportRequested+=ExportWeek;
   weekView.DaySelected+=delegate(DateTime day) { historyHeading.Text=day.ToString("MMM dd",System.Globalization.CultureInfo.InvariantCulture)+" sessions"; history.EmptyMessage="No focus sessions on this day."; history.SetEntries(data.Plants.Where(p=>p.Date.ToLocalTime().Date==day.Date).OrderByDescending(p=>p.Date).Take(30)); resetHistory.Visible=true; hint.Text="Showing focus sessions for "+day.ToString("MMMM dd",System.Globalization.CultureInfo.InvariantCulture)+"."; };
   tasksPanel.SetBounds(24,64,502,364); gardenPanel.Controls.Add(tasksPanel);
-  LabelAt(tasksPanel,"Task queue",0,0,340,40,22,FontStyle.Bold);
+  LabelAt(tasksPanel,"Task queue",0,0,232,40,22,FontStyle.Bold);
   archiveViewButton=ButtonAt(tasksPanel,"Archived",248,3,94,29,delegate { taskBoard.ShowArchived=!taskBoard.ShowArchived; RefreshPlanning(); });
   queueCount.SetBounds(3,40,490,22); queueCount.Font=new Font("Segoe UI",8); tasksPanel.Controls.Add(queueCount);
   ButtonAt(tasksPanel,"Archive done",350,3,152,29,delegate { TaskStore.ArchiveDone(data); Save(); RefreshPlanning(); });
@@ -185,7 +186,7 @@ public class Garden : Form {
   goalButton=ButtonAt(this,"Daily goal · 60m",760,600,270,30,delegate { data.DailyGoal=data.DailyGoal>=120?30:data.DailyGoal+30; Save(); Render(); });
   foreach(Control control in Controls) control.Top+=32;
   windowHeader=new Panel { Location=Point.Empty,Size=new Size(1060,32) }; Controls.Add(windowHeader);
-  var windowName=LabelAt(windowHeader,"Focus Garden  ·  1.5",26,4,300,24,9,FontStyle.Regular);
+  var windowName=LabelAt(windowHeader,"Focus Garden  ·  1.5.1",26,4,300,24,9,FontStyle.Regular);
   bool moving=false; Point mouseOrigin=Point.Empty,windowOrigin=Point.Empty;
   MouseEventHandler down=delegate(object sender,MouseEventArgs e) { if(e.Button!=MouseButtons.Left) return; moving=true; mouseOrigin=Cursor.Position; windowOrigin=Location; ((Control)sender).Capture=true; };
   MouseEventHandler move=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) moving=false; if(moving) Location=new Point(windowOrigin.X+Cursor.Position.X-mouseOrigin.X,windowOrigin.Y+Cursor.Position.Y-mouseOrigin.Y); };
@@ -195,19 +196,18 @@ public class Garden : Form {
   windowHeader.MouseCaptureChanged+=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) moving=false; };
   windowName.MouseCaptureChanged+=delegate { if((Control.MouseButtons&MouseButtons.Left)==0) moving=false; };
   minimizeButton=ButtonAt(windowHeader,"−",958,4,40,24,delegate { WindowState=FormWindowState.Minimized; }); minimizeButton.AccessibleName="Minimize window";
-  closeButton=ButtonAt(windowHeader,"×",1006,4,40,24,delegate { Close(); }); closeButton.AccessibleName="Close application";
-  ((PillButton)closeButton).Destructive=true;
+  closeButton=ButtonAt(windowHeader,"×",1006,4,40,24,ShowIsland); closeButton.AccessibleName="Return to island";
   using(var shape=Shapes.Round(ClientRectangle,22)) Region=new Region(shape);
   Paint+=delegate(object sender,PaintEventArgs e) { e.Graphics.SmoothingMode=SmoothingMode.AntiAlias; using(var outline=new Pen(border)) using(var shape=Shapes.Round(new Rectangle(0,0,Width-1,Height-1),22)) e.Graphics.DrawPath(outline,shape); };
   Resize+=delegate { int extra=ClientSize.Width-1060; theme.Left=820+extra; soundButton.Left=820+extra; };
-  FormClosing+=delegate { exiting=true; if(data.Running) data.Remaining=Seconds(data.Deadline); Save(); tick.Stop(); ambience.Stop(); if(island!=null) { island.Close(); island.Dispose(); } if(tray!=null) { tray.Visible=false; tray.Dispose(); } };
+  FormClosing+=delegate(object sender,FormClosingEventArgs e) { if(e.CloseReason==CloseReason.UserClosing && !exiting) { e.Cancel=true; Save(); ShowIsland(); return; } exiting=true; if(data.Running) data.Remaining=Seconds(data.Deadline); Save(); tick.Stop(); ambience.Stop(); if(island!=null) { island.Close(); island.Dispose(); } if(tray!=null) { tray.Visible=false; tray.Dispose(); } };
   ambience.Interval=80; ambience.Tick+=delegate { if(!Visible || !canvas.Visible || data.ReducedMotion) { ambience.Stop(); return; } scenePhase+=.07; canvas.Invalidate(); };
   VisibleChanged+=delegate { if(Visible && canvas.Visible && !data.ReducedMotion) ambience.Start(); else ambience.Stop(); };
   loading=false; ApplyTheme(); Render(); tick.Interval=250; tick.Tick+=delegate { UpdateTimer(); }; tick.Start(); UpdateTimer();
   saveDelay.Interval=450; saveDelay.Tick+=delegate { Save(); };
   if(loadNotice!=null) { hint.Text=loadNotice; MessageBox.Show(loadNotice,"Focus Garden recovery",MessageBoxButtons.OK,MessageBoxIcon.Information); }
   if(!previewMode) {
-   var menu=new ContextMenuStrip(); var trayToggle=menu.Items.Add("Start / pause",null,delegate { ToggleFromIsland(); }); menu.Opening+=delegate { trayToggle.Text=data.Running?"Pause session":"Start / resume session"; }; menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Show island",null,delegate { ShowIsland(); }); menu.Items.Add("Open garden",null,delegate { ShowGarden(); }); menu.Items.Add("Quit",null,delegate { Close(); });
+   var menu=new ContextMenuStrip(); var trayToggle=menu.Items.Add("Start / pause",null,delegate { ToggleFromIsland(); }); menu.Opening+=delegate { trayToggle.Text=data.Running?"Pause session":"Start / resume session"; }; menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Show island",null,delegate { ShowIsland(); }); menu.Items.Add("Open garden",null,delegate { ShowGarden(); }); menu.Items.Add("Quit",null,delegate { ExitFromIsland(); });
    tray=new NotifyIcon { Icon=Icon,Text="Focus Garden",ContextMenuStrip=menu,Visible=true };
    tray.DoubleClick+=delegate { ShowGarden(); };
    Shown+=delegate { ShowIsland(); };
@@ -227,15 +227,15 @@ public class Garden : Form {
  public bool SelectQueuedTask(string id) { if(!TaskStore.Select(data,id)) { hint.Text="Pause the timer before selecting a task."; return false; } task.Text=data.Task; Save(); RefreshPlanning(); return true; }
  public bool CompleteQueuedTask(string id) { if(!TaskStore.ToggleDone(data,id,DateTime.UtcNow)) { hint.Text="Pause the timer before completing its active task."; return false; } task.Text=data.Task; Save(); RefreshPlanning(); return true; }
  public void ShowTasks() { ShowGarden(); SwitchView("Tasks"); }
- void RefreshPlanning() { weekView.RefreshData(data); taskBoard.RefreshTasks(data); queueCount.Text=taskBoard.ShowArchived?data.Tasks.Count(t=>t.Archived)+" archived  ·  Use ↶ to restore a task":data.Tasks.Count(t=>!t.Done && !t.Archived)+" pending  ·  "+data.Tasks.Count(t=>t.Done && !t.Archived)+" completed"; archiveViewButton.BackColor=taskBoard.ShowArchived?accent:border; archiveViewButton.ForeColor=taskBoard.ShowArchived?(data.Dark?bg:Color.White):ink; }
+ void RefreshPlanning() { weekView.RefreshData(data); taskBoard.RefreshTasks(data); queueCount.Text=taskBoard.ShowArchived?data.Tasks.Count(t=>t.Archived)+" archived  ·  Use ↶ to restore a task":data.Tasks.Count(t=>!t.Done && !t.Archived)+" pending  ·  "+data.Tasks.Count(t=>t.Done && !t.Archived)+" completed"; archiveViewButton.FillColor=taskBoard.ShowArchived?accent:border; archiveViewButton.ForeColor=taskBoard.ShowArchived?(data.Dark?bg:Color.White):ink; }
  void ResetHistory() { historyHeading.Text="Recent sessions"; history.EmptyMessage="Completed sessions will appear here."; history.SetEntries(data.Plants.OrderByDescending(p=>p.Date).Take(30)); resetHistory.Visible=false; }
  void ExportWeek() { var summary=WeekSummary.Create(data,DateTime.Today); using(var dialog=new SaveFileDialog { Filter="CSV (*.csv)|*.csv",FileName="focus-week-"+summary.Start.ToString("yyyy-MM-dd")+".csv" }) if(dialog.ShowDialog(this)==DialogResult.OK) try { File.WriteAllText(dialog.FileName,summary.ToCsv(),new System.Text.UTF8Encoding(true)); hint.Text="Weekly statistics exported."; } catch(Exception error) { hint.Text="Export failed: "+error.Message; } }
  void SwitchView(string name) {
   currentView=name; foreach(var c in greenhouseControls) c.Visible=name=="Garden" && c!=gardenLabel && c!=stats;
   weekView.Visible=name=="Week"; tasksPanel.Visible=name=="Tasks";
-  gardenTab.BackColor=name=="Garden"?accent:border; gardenTab.ForeColor=name=="Garden"?(data.Dark?bg:Color.White):ink;
-  weekTab.BackColor=name=="Week"?accent:border; weekTab.ForeColor=name=="Week"?(data.Dark?bg:Color.White):ink;
-  tasksTab.BackColor=name=="Tasks"?accent:border; tasksTab.ForeColor=name=="Tasks"?(data.Dark?bg:Color.White):ink;
+  gardenTab.FillColor=name=="Garden"?accent:border; gardenTab.ForeColor=name=="Garden"?(data.Dark?bg:Color.White):ink;
+  weekTab.FillColor=name=="Week"?accent:border; weekTab.ForeColor=name=="Week"?(data.Dark?bg:Color.White):ink;
+  tasksTab.FillColor=name=="Tasks"?accent:border; tasksTab.ForeColor=name=="Tasks"?(data.Dark?bg:Color.White):ink;
   RefreshPlanning();
  }
  public void RememberIsland(Point anchor,bool pinned) { data.HasIslandPosition=true; data.IslandX=anchor.X; data.IslandY=anchor.Y; data.IslandPinned=pinned; Save(); }
@@ -243,10 +243,10 @@ public class Garden : Form {
  public void ChooseDuration(IWin32Window owner) { if(data.Running) { hint.Text="Pause the session before changing its duration."; return; } using(var picker=new DurationPicker(data.CustomMinutes,data.ReducedMotion)) if(picker.ShowDialog(owner)==DialogResult.OK) SetCustomDuration(picker.Minutes); }
  void ApplyMotion(Control parent) { foreach(Control c in parent.Controls) { var button=c as PillButton; if(button!=null) button.ReducedMotion=data.ReducedMotion; ApplyMotion(c); } }
  public void ShowGarden() { if(island!=null) island.Suspend(); Show(); WindowState=FormWindowState.Normal; Activate(); }
- public void ShowIsland() { if(exiting) return; if(island==null || island.IsDisposed) island=new FocusIsland(this); island.Reveal(); Hide(); }
+ public void ShowIsland() { if(exiting) return; IslandModeRequested=true; Save(); if(previewMode) { Hide(); return; } if(island==null || island.IsDisposed) island=new FocusIsland(this); island.Reveal(); Hide(); }
  public static Icon LoadIcon() { using(var stream=typeof(Garden).Assembly.GetManifestResourceStream("FocusGarden.Icon")) { if(stream==null) return (Icon)SystemIcons.Application.Clone(); using(var icon=new Icon(stream,new Size(32,32))) return (Icon)icon.Clone(); } }
  public static Image LoadMark() { using(var stream=typeof(Garden).Assembly.GetManifestResourceStream("FocusGarden.Mark")) { if(stream==null) return SystemIcons.Application.ToBitmap(); using(var image=Image.FromStream(stream)) return new Bitmap(image); } }
- public void ExitFromIsland() { Close(); }
+ public void ExitFromIsland() { exiting=true; Close(); }
  internal static void RenderPreview(string folder) {
   Directory.CreateDirectory(folder);
   using(var garden=new Garden(true)) {
@@ -256,8 +256,8 @@ public class Garden : Form {
    using(var capsule=new FocusIsland(garden)) {
     capsule.CheckLifecycle();
     garden.data.ReducedMotion=true; capsule.ApplyMotion(); capsule.CheckLifecycle(); garden.data.ReducedMotion=false; capsule.ApplyMotion();
-    capsule.CreateControl(); capsule.RenderTo(Path.Combine(folder,"island-compact-1.5-en.png"),false);
-    capsule.RenderTo(Path.Combine(folder,"island-expanded-1.5-en.png"),true);
+    capsule.CreateControl(); capsule.RenderTo(Path.Combine(folder,"island-compact-1.5.1-en.png"),false);
+    capsule.RenderTo(Path.Combine(folder,"island-expanded-1.5.1-en.png"),true);
     garden.SetCustomDuration(37); if(garden.data.Remaining!=2220 || garden.data.CustomMinutes!=37) throw new Exception("Custom duration failed");
     garden.SetIslandTask("Write a project note"); if(garden.data.Task!="Write a project note") throw new Exception("Island task did not sync");
     garden.data.Remaining=1122;
@@ -269,13 +269,13 @@ public class Garden : Form {
     if(garden.data.Running || garden.data.Plants.Count!=2) throw new Exception("Completed session did not grow a plant");
     if(garden.data.Plants.Last().Kind!=2) throw new Exception("Selected seed was not used");
     garden.UpdateTimer(); if(garden.data.Plants.Count!=2) throw new Exception("Duplicate plant after completion");
-    capsule.Celebrate(); capsule.RenderTo(Path.Combine(folder,"island-celebration-1.5-en.png"),true);
+    capsule.Celebrate(); capsule.RenderTo(Path.Combine(folder,"island-celebration-1.5.1-en.png"),true);
    }
    Point savedAnchor=new Point(Screen.PrimaryScreen.WorkingArea.Left+Screen.PrimaryScreen.WorkingArea.Width/2,Screen.PrimaryScreen.WorkingArea.Top+16);
    garden.RememberIsland(savedAnchor,true);
    using(var restored=new FocusIsland(garden)) if(restored.Left+restored.Width/2!=savedAnchor.X || restored.Top!=savedAnchor.Y) throw new Exception("Island position restore failed");
    garden.data.IslandPinned=false;
-   using(var picker=new DurationPicker(37)) { picker.StartPosition=FormStartPosition.Manual; picker.Location=new Point(-30000,-30000); picker.Show(); using(var bmp=new Bitmap(picker.Width,picker.Height)) { picker.DrawToBitmap(bmp,new Rectangle(Point.Empty,picker.Size)); bmp.Save(Path.Combine(folder,"custom-duration-1.5-en.png")); } picker.Hide(); }
+   using(var picker=new DurationPicker(37)) { picker.StartPosition=FormStartPosition.Manual; picker.Location=new Point(-30000,-30000); picker.Show(); using(var bmp=new Bitmap(picker.Width,picker.Height)) { picker.DrawToBitmap(bmp,new Rectangle(Point.Empty,picker.Size)); bmp.Save(Path.Combine(folder,"custom-duration-1.5.1-en.png")); } picker.Hide(); }
    for(int i=0;i<10;i++) garden.data.Plants.Add(new Plant { Task=new[]{"Sketch the layout","Read a chapter","Review the code","Write a project note"}[i%4],Minutes=25,Date=DateTime.UtcNow.AddDays(-1-i/3),Kind=i%4 });
    garden.IslandDuration(25);
    var next=TaskStore.Add(garden.data,"Design the next update",DateTime.UtcNow.AddHours(-2));
@@ -283,31 +283,31 @@ public class Garden : Form {
    for(int i=0;i<3;i++) { var done=TaskStore.Add(garden.data,new[]{"Sketch the interface","Test the timer","Refine the icon"}[i],DateTime.UtcNow.AddDays(-4)); TaskStore.ToggleDone(garden.data,done.Id,DateTime.UtcNow.AddDays(-i)); }
    garden.SelectQueuedTask(next.Id); garden.Render();
    garden.StartPosition=FormStartPosition.Manual; garden.Location=new Point(-30000,-30000); garden.ShowInTaskbar=false; garden.Show();
-   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"dark-theme-1.5-en.png")); }
-   garden.SwitchView("Week"); using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(Point.Empty,garden.Size)); bmp.Save(Path.Combine(folder,"week-1.5-en.png")); }
-   garden.SwitchView("Tasks"); using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(Point.Empty,garden.Size)); bmp.Save(Path.Combine(folder,"tasks-1.5-en.png")); }
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"dark-theme-1.5.1-en.png")); }
+   garden.SwitchView("Week"); using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(Point.Empty,garden.Size)); bmp.Save(Path.Combine(folder,"week-1.5.1-en.png")); }
+   garden.SwitchView("Tasks"); using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(Point.Empty,garden.Size)); bmp.Save(Path.Combine(folder,"tasks-1.5.1-en.png")); }
    garden.SwitchView("Garden");
    garden.data.Dark=false; garden.ApplyTheme();
-   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"light-theme-1.5-en.png")); }
+   using(var bmp=new Bitmap(garden.Width,garden.Height)) { garden.DrawToBitmap(bmp,new Rectangle(0,0,garden.Width,garden.Height)); bmp.Save(Path.Combine(folder,"light-theme-1.5.1-en.png")); }
    garden.Hide();
   }
  }
  Label LabelAt(Control parent,string text,int x,int y,int w,int h,int size,FontStyle style) { var l=new Label { Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",size,style),BackColor=Color.Transparent }; parent.Controls.Add(l); return l; }
- Button ButtonAt(Control parent,string text,int x,int y,int w,int h,Action action) { var b=new PillButton { UseControlColors=true,Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",10),TabStop=true }; b.Click+=delegate { action(); }; parent.Controls.Add(b); return b; }
+ PillButton ButtonAt(Control parent,string text,int x,int y,int w,int h,Action action) { var b=new PillButton { UseControlColors=true,Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",10),TabStop=true }; b.Click+=delegate { action(); }; parent.Controls.Add(b); return b; }
  void ApplyTheme() {
   bg=ColorTranslator.FromHtml(data.Dark?"#101418":"#EFF2F3"); panel=ColorTranslator.FromHtml(data.Dark?"#192126":"#FFFFFF"); ink=ColorTranslator.FromHtml(data.Dark?"#EBF0F1":"#1C2A2E"); muted=ColorTranslator.FromHtml(data.Dark?"#95A8AF":"#65777D"); border=ColorTranslator.FromHtml(data.Dark?"#29363C":"#E3EBEB"); accent=ColorTranslator.FromHtml(data.Dark?"#A7E3BC":"#275C48");
   BackColor=bg; PaintControls(this); timerPanel.BackColor=panel; gardenPanel.BackColor=panel; canvas.BackColor=panel;
-  windowHeader.BackColor=bg; windowHeader.Controls[0].ForeColor=muted; minimizeButton.BackColor=bg; closeButton.BackColor=bg;
+  windowHeader.BackColor=bg; windowHeader.Controls[0].ForeColor=muted; minimizeButton.FillColor=bg; closeButton.FillColor=bg;
   history.BackColor=panel; history.ForeColor=ink; history.Subtle=muted; history.Highlight=accent;
   tasksPanel.BackColor=panel; queueInput.BackColor=border; queueCount.ForeColor=muted;
   taskBoard.BackColor=panel; taskBoard.ForeColor=ink; taskBoard.Muted=muted; taskBoard.Accent=accent;
   weekView.BackColor=panel; weekView.ForeColor=ink; weekView.Muted=muted; weekView.Accent=accent;
   ApplyMotion(this);
   if(Visible && canvas.Visible && !data.ReducedMotion) ambience.Start(); else ambience.Stop();
-  theme.Text=data.Dark?"Light theme":"Dark theme"; start.BackColor=accent; start.ForeColor=data.Dark?bg:Color.White; hint.ForeColor=muted; tagline.ForeColor=muted; stats.ForeColor=muted; canvas.Invalidate();
+  theme.Text=data.Dark?"Light theme":"Dark theme"; start.FillColor=accent; start.ForeColor=data.Dark?bg:Color.White; hint.ForeColor=muted; tagline.ForeColor=muted; stats.ForeColor=muted; canvas.Invalidate();
   SwitchView(currentView);
  }
- void PaintControls(Control root) { foreach(Control c in root.Controls) { c.ForeColor=ink; if(c is Button) c.BackColor=border; else if(c is TextBox || c is ListBox) c.BackColor=panel; PaintControls(c); } }
+ void PaintControls(Control root) { foreach(Control c in root.Controls) { c.ForeColor=ink; if(c is PillButton) ((PillButton)c).FillColor=border; else if(c is TextBox || c is ListBox) c.BackColor=panel; PaintControls(c); } }
  void SetDuration(int minutes) { data.Minutes=minutes; data.Remaining=minutes*60; data.Running=false; Save(); Render(); }
  void Toggle() { if(data.Running) { data.Remaining=Seconds(data.Deadline); data.Running=false; hint.Text="Session paused."; } else { data.Deadline=DateTime.UtcNow.AddSeconds(data.Remaining); data.Running=true; hint.Text="Session in progress."; } tick.Interval=data.Running?250:1000; Save(); Render(); }
  void UpdateTimer() {
@@ -326,7 +326,7 @@ public class Garden : Form {
   mode.Text=data.Rest?"Break · switch to focus":"Focus · switch to break";
   speciesButton.Text=data.SelectedKind<0?"Seeds · Mixed":"Seeds · "+PlantName(data.SelectedKind); speciesButton.Enabled=!data.Running;
   goalButton.Text="Daily goal · "+data.DailyGoal+"m"; dailyStats.Invalidate();
-  foreach(var b in durations) { b.Enabled=!data.Running; b.ForeColor=ink; b.BackColor=border; }
+  foreach(var b in durations) { b.Enabled=!data.Running; b.ForeColor=ink; b.FillColor=border; }
   stats.Text="Plants: "+data.Plants.Count+"     /     Focus: "+data.Plants.Sum(p=>p.Minutes)+" min     /     Today: "+data.Plants.Count(p=>p.Date.ToLocalTime().Date==DateTime.Today);
   ResetHistory(); canvas.Invalidate();
   RefreshPlanning();

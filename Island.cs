@@ -208,23 +208,42 @@ public static class Shapes {
  public static GraphicsPath Round(Rectangle r,int radius) { int d=Math.Max(2,Math.Min(radius*2,Math.Min(r.Width,r.Height))); var p=new GraphicsPath(); p.AddArc(r.X,r.Y,d,d,180,90); p.AddArc(r.Right-d,r.Y,d,d,270,90); p.AddArc(r.Right-d,r.Bottom-d,d,d,0,90); p.AddArc(r.X,r.Bottom-d,d,d,90,90); p.CloseFigure(); return p; }
 }
 
-public class PillButton : Button {
- public bool Primary,Selected,UseControlColors,Destructive,ReducedMotion;
- float hover; bool over;
+public class PillButton : Control,IButtonControl {
+ bool primary,selected,isDefault;
+ Color fillColor=Color.FromArgb(34,42,47);
+ public bool Primary { get { return primary; } set { if(primary!=value) { primary=value; Invalidate(); } } }
+ public bool Selected { get { return selected; } set { if(selected!=value) { selected=value; Invalidate(); } } }
+ public Color FillColor { get { return fillColor; } set { if(fillColor!=value) { fillColor=value; Invalidate(); } } }
+ public bool UseControlColors,Destructive,ReducedMotion;
+ public DialogResult DialogResult { get; set; }
+ float hover; bool over,spacePressed;
  readonly Timer motion=new Timer();
  public PillButton() {
-  FlatStyle=FlatStyle.Flat; FlatAppearance.BorderSize=0; Cursor=Cursors.Hand; DoubleBuffered=true; SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
+  Cursor=Cursors.Hand; DoubleBuffered=true; TabStop=true; AccessibleRole=AccessibleRole.PushButton;
+  SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.SupportsTransparentBackColor|ControlStyles.Selectable|ControlStyles.StandardClick,true); SetStyle(ControlStyles.StandardDoubleClick,false); BackColor=Color.Transparent;
   motion.Interval=16; motion.Tick+=delegate { float target=over?1:0; hover+=(target-hover)*.22f; if(Math.Abs(target-hover)<.01f) { hover=target; motion.Stop(); } Invalidate(); };
   MouseEnter+=delegate { over=true; if(ReducedMotion) { hover=1; Invalidate(); } else motion.Start(); }; MouseLeave+=delegate { over=false; if(ReducedMotion) { hover=0; Invalidate(); } else motion.Start(); };
  }
+ public void NotifyDefault(bool value) { isDefault=value; Invalidate(); }
+ public void PerformClick() { if(Enabled && Visible) OnClick(EventArgs.Empty); }
+ protected override void OnClick(EventArgs e) { base.OnClick(e); if(DialogResult!=DialogResult.None) { var form=FindForm(); if(form!=null) form.DialogResult=DialogResult; } }
+ protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
+ protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); if(!Enabled) spacePressed=false; Invalidate(); }
+ protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+ protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); spacePressed=false; Invalidate(); }
+ protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); if(e.Button==MouseButtons.Left) Focus(); }
+ protected override void OnKeyDown(KeyEventArgs e) { base.OnKeyDown(e); if(e.KeyCode==Keys.Enter && !e.Alt && !e.Control) { PerformClick(); e.SuppressKeyPress=true; } if(e.KeyCode==Keys.Space && !e.Alt && !e.Control) { spacePressed=true; e.Handled=true; } }
+ protected override void OnKeyUp(KeyEventArgs e) { base.OnKeyUp(e); if(e.KeyCode==Keys.Space && !e.Alt && !e.Control) { bool activate=spacePressed; spacePressed=false; if(activate) PerformClick(); e.SuppressKeyPress=true; } }
+ protected override AccessibleObject CreateAccessibilityInstance() { return new PillAccessibility(this); }
+ sealed class PillAccessibility : ControlAccessibleObject { readonly PillButton owner; public PillAccessibility(PillButton value):base(value) { owner=value; } public override string DefaultAction { get { return "Press"; } } public override void DoDefaultAction() { owner.PerformClick(); } }
  protected override void OnPaint(PaintEventArgs e) {
-  var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias; Color basis=UseControlColors?BackColor:Primary?Color.FromArgb(167,227,188):Selected?Color.FromArgb(49,75,65):Color.FromArgb(34,42,47);
+  var g=e.Graphics; g.SmoothingMode=SmoothingMode.AntiAlias; Color basis=UseControlColors?FillColor:Primary?Color.FromArgb(167,227,188):Selected?Color.FromArgb(49,75,65):Color.FromArgb(34,42,47);
   Color fill=Color.FromArgb(Math.Min(255,basis.R+(int)(hover*12)),Math.Min(255,basis.G+(int)(hover*12)),Math.Min(255,basis.B+(int)(hover*12)));
   if(Destructive && hover>0) fill=Color.FromArgb((int)(basis.R+(185-basis.R)*hover),(int)(basis.G+(62-basis.G)*hover),(int)(basis.B+(69-basis.B)*hover));
   using(var path=Shapes.Round(new Rectangle(0,0,Width-1,Height-1),12)) using(var b=new SolidBrush(fill)) g.FillPath(b,path);
   Color ink=!Enabled?Color.FromArgb(100,114,119):UseControlColors?ForeColor:Primary?Color.FromArgb(18,41,29):Color.FromArgb(224,233,236);
   TextRenderer.DrawText(g,Text,Font,ClientRectangle,ink,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
-  if(Focused) using(var p=new Pen(Color.FromArgb(132,159,148))) using(var path=Shapes.Round(new Rectangle(3,3,Width-7,Height-7),9)) g.DrawPath(p,path);
+  if(Focused || isDefault) using(var p=new Pen(Color.FromArgb(132,159,148))) using(var path=Shapes.Round(new Rectangle(3,3,Width-7,Height-7),9)) g.DrawPath(p,path);
  }
  protected override void Dispose(bool disposing) { if(disposing) motion.Dispose(); base.Dispose(disposing); }
 }

@@ -12,7 +12,7 @@ public static class Regression {
    Garden.Main(new[]{"--self-test"});
    CheckTasks(); CheckWeek(); CheckMerging(); CheckStorage();
    System.Windows.Forms.Application.EnableVisualStyles(); System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-   CheckKeyboard();
+   CheckKeyboard(); CheckButtons(); CheckCloseBehavior();
    Console.WriteLine("PASS: "+passed+" additional regression assertions");
    string preview=Path.Combine(Environment.CurrentDirectory,"work","test-preview");
    Garden.RenderPreview(preview);
@@ -105,6 +105,44 @@ public static class Regression {
    for(int i=0;i<5;i++) press(System.Windows.Forms.Keys.Down); press(System.Windows.Forms.Keys.Enter); Check(selected==data.Tasks[6].Id,"Queue keyboard scrolling");
    press(System.Windows.Forms.Keys.Space); press(System.Windows.Forms.Keys.Delete); Check(completed==data.Tasks[6].Id && archived==completed,"Queue keyboard completion and archive");
    TaskStore.ToggleDone(data,completed,now); board.RefreshTasks(data); selected=null; press(System.Windows.Forms.Keys.Enter); Check(selected==null,"Keyboard should not focus a completed task after reordering");
+  }
+ }
+ static void CheckButtons() {
+  using(var form=new System.Windows.Forms.Form { BackColor=System.Drawing.Color.FromArgb(19,31,27),StartPosition=System.Windows.Forms.FormStartPosition.Manual,Location=new System.Drawing.Point(-30000,-30000),ClientSize=new System.Drawing.Size(220,100) })
+  using(var button=new PillButton { UseControlColors=true,FillColor=System.Drawing.Color.FromArgb(167,227,188),Location=new System.Drawing.Point(20,20),Size=new System.Drawing.Size(160,44),ReducedMotion=true }) {
+   form.Controls.Add(button); form.Show();
+   Check(!((System.Windows.Forms.Control)button is System.Windows.Forms.ButtonBase),"Custom button must not use the native button renderer");
+   using(var image=new System.Drawing.Bitmap(160,44)) { button.DrawToBitmap(image,new System.Drawing.Rectangle(0,0,160,44)); Check(image.GetPixel(0,0).ToArgb()==form.BackColor.ToArgb(),"Button corners should show the parent background"); Check(image.GetPixel(80,22).ToArgb()==button.FillColor.ToArgb(),"Button fill"); }
+   form.BackColor=System.Drawing.Color.FromArgb(236,240,239);
+   using(var image=new System.Drawing.Bitmap(160,44)) { button.DrawToBitmap(image,new System.Drawing.Rectangle(0,0,160,44)); Check(image.GetPixel(0,0).ToArgb()==form.BackColor.ToArgb(),"Theme change left stale corner pixels"); }
+   int clicks=0; button.Click+=delegate { clicks++; };
+   var keyDown=typeof(PillButton).GetMethod("OnKeyDown",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic); var keyUp=typeof(PillButton).GetMethod("OnKeyUp",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+   keyUp.Invoke(button,new object[]{new System.Windows.Forms.KeyEventArgs(System.Windows.Forms.Keys.Space)}); Check(clicks==0,"Space release without press should not click");
+   keyDown.Invoke(button,new object[]{new System.Windows.Forms.KeyEventArgs(System.Windows.Forms.Keys.Space)}); keyUp.Invoke(button,new object[]{new System.Windows.Forms.KeyEventArgs(System.Windows.Forms.Keys.Space)}); Check(clicks==1,"Space should click once");
+   keyDown.Invoke(button,new object[]{new System.Windows.Forms.KeyEventArgs(System.Windows.Forms.Keys.Enter)}); Check(clicks==2,"Enter should click once");
+   button.Enabled=false; button.PerformClick(); Check(clicks==2,"Disabled button clicked"); button.Enabled=true;
+   button.AccessibilityObject.DoDefaultAction(); Check(clicks==3,"Accessible press action failed");
+   button.DialogResult=System.Windows.Forms.DialogResult.Cancel; button.PerformClick(); Check(form.DialogResult==System.Windows.Forms.DialogResult.Cancel,"Dialog cancel behavior failed");
+  }
+ }
+ static void CheckCloseBehavior() {
+  using(var garden=new Garden(true)) {
+   garden.StartPosition=System.Windows.Forms.FormStartPosition.Manual; garden.Location=new System.Drawing.Point(-30000,-30000); garden.Show(); garden.SetCustomDuration(1); garden.ToggleFromIsland(); DateTime deadline=garden.State.Deadline;
+   CheckLabelOcclusion(garden);
+   var switchView=typeof(Garden).GetMethod("SwitchView",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+   switchView.Invoke(garden,new object[]{"Tasks"}); CheckLabelOcclusion(garden); switchView.Invoke(garden,new object[]{"Week"}); CheckLabelOcclusion(garden);
+   var close=Find(garden,"Return to island") as PillButton; Check(close!=null,"Window close control missing"); close.PerformClick();
+   Check(garden.IslandModeRequested && !garden.Visible && !garden.IsDisposed,"Cross should hide into island mode"); Check(garden.State.Running && garden.State.Deadline==deadline,"Cross interrupted running timer");
+   garden.IslandModeRequested=false; garden.Show(); garden.Close(); Check(garden.IslandModeRequested && !garden.IsDisposed,"User close / Alt+F4 should return to island");
+   garden.ExitFromIsland(); Check(garden.IsDisposed,"Explicit quit should exit");
+  }
+ }
+ static System.Windows.Forms.Control Find(System.Windows.Forms.Control parent,string accessibleName) { foreach(System.Windows.Forms.Control child in parent.Controls) { if(child.AccessibleName==accessibleName) return child; var nested=Find(child,accessibleName); if(nested!=null) return nested; } return null; }
+ static void CheckLabelOcclusion(System.Windows.Forms.Control parent) {
+  foreach(System.Windows.Forms.Control child in parent.Controls) {
+   var label=child as System.Windows.Forms.Label;
+   if(label!=null && label.Visible) foreach(System.Windows.Forms.Control sibling in parent.Controls) if(sibling is PillButton && sibling.Visible) Check(!label.Bounds.IntersectsWith(sibling.Bounds),"Label overlaps a button: "+label.Text+" / "+sibling.Text);
+   if(child.Visible) CheckLabelOcclusion(child);
   }
  }
 }
